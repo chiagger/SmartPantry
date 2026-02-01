@@ -15,7 +15,6 @@
     "@react-native-firebase/analytics": "23.7.0",
     "@react-native-firebase/app": "23.7.0",
     "@react-native-firebase/auth": "23.7.0",
-    "@react-native-firebase/crashlytics": "23.7.0",
     "@react-native-firebase/firestore": "23.7.0",
     "@react-native-firebase/functions": "23.7.0",
     "@react-native-firebase/remote-config": "23.7.0",

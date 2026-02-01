@@ -1,6 +1,5 @@
 import { getAnalytics } from "@react-native-firebase/analytics";
 import { getAuth } from '@react-native-firebase/auth';
-import { getCrashlytics } from "@react-native-firebase/crashlytics";
 import { getFirestore } from '@react-native-firebase/firestore';
 import { getFunctions } from '@react-native-firebase/functions';
 import { getRemoteConfig } from "@react-native-firebase/remote-config";
@@ -13,8 +12,6 @@ const db = getFirestore();
 const auth = getAuth();
 const functions = getFunctions(undefined, 'europe-west8');
 const analytics = getAnalytics();
-const crashlytics = getCrashlytics();
 const remoteConfig = getRemoteConfig();
 
-export { analytics, auth, crashlytics, db, functions, remoteConfig };
-
+export { analytics, auth, db, functions, remoteConfig };
