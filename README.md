@@ -1,50 +1,57 @@
-# Welcome to your Expo app 👋
+**BUILDS**
+https://expo.dev/accounts/chiagger/projects/smartpantry
+In ogni caso fare npx expo-doctor@latest prima della build
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**APRIRE L'APP IN LOCALE**
 
-## Get started
+**Android**
 
-1. Install dependencies
+_Metodo 1, con device fisico tramite Expo_
 
-   ```bash
-   npm install
-   ```
+- Installare l'app Expo Go sul dispositivo fisico.
+- Creare la build con
+  eas build --profile development-simulator --platform android
+- Trovare la build su <a href="https://expo.dev/accounts/chiagger/projects/SamnEat/builds">Expo Application Services</a> e installarla sul dispositivo Android.
+- Da terminale npx expo start --dev-client. Ci verrà mostrato un QR Code che va scannerizzato con l'app Expo Go dal telefono per aprire l'app in locale.
 
-2. Start the app
+_Metodo 2, con emulatore tramite Expo_
 
-   ```bash
-   npx expo start
-   ```
+- Scaricare Android Studio per avere accesso agli emulatori Android.
+- Creare la build con
+  eas build --profile development-simulator --platform android
+- Trovare la build su <a href="https://expo.dev/accounts/chiagger/projects/SamnEat/builds">Expo Application Services</a>, scaricarla e installarla trascinandola all'interno dell'emulatore.
 
-In the output, you'll find options to open the app in a
+_Metodo 2, con emulatore tramite npm_
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+- Scaricare Android Studio per avere accesso agli emulatori Android.
+- Lanciare il comando npx expo run:android
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+**iOS**
 
-## Get a fresh project
+_Metodo 1_
 
-When you're ready, run:
+- Scaricare xCode per avere accesso agli emulatori di iOS.
+- Comando npx expo prebuild
+- Aprire ios/SamnEat.xcworkspace su xCode
+- Premere il pulsante play su xCode per avviare una build
+- A build conclusa, lanciare npm run start per avviare il server locale e premere i per aprirlo sull'emulatore iOS
 
-```bash
-npm run reset-project
-```
+**BUILD DI PRODUZIONE, TESTING E RILASCIO**
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+**Android**
 
-## Learn more
+- Lanciare eas build --platform android --profile production --auto-submit
+- La build sarà visibile nella sezione Internal Testing di Google Play Console ed è scaricabile e testabile da dispositivo fisico su invito (con Google Play Store)
 
-To learn more about developing your project with Expo, look at the following resources:
+**iOS**
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+- Lanciare eas build --platform ios --profile production --auto-submit
+- La build sarà visibile nella sezione TestFlight su App Store Connect ed è testabile da dispositivo fisico su invito con app TestFlight
 
-## Join the community
+**CODE PUSH SENZA RILASCIARE UNA NUOVA VERSIONE**
+eas update --channel production --message "your message"
 
-Join our community of developers creating universal apps.
+**Note varie:**
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- Quando si cancella utente da Firebase Authentication ricordarsi di cancellare anche da Firestore Database
+- Comando per fare deploy delle cloud functions: firebase deploy --only functions, oppure firebase deploy --only functions:functionName per una function specifica
