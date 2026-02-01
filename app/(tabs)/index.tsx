@@ -1,5 +1,6 @@
 import { ThemedText } from "@/components/ThemedText";
 import colors from "@/constants/Colors";
+import { router } from "expo-router";
 import {
   Dimensions,
   Image,
@@ -43,7 +44,10 @@ export default function Welcome() {
               </ThemedText>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.button, styles.secondaryButton]}>
+            <TouchableOpacity
+              style={[styles.button, styles.secondaryButton]}
+              onPress={() => router.push("/register")}
+            >
               <ThemedText style={styles.secondaryButtonText}>
                 Create account with email
               </ThemedText>
