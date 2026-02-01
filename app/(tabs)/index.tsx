@@ -38,7 +38,10 @@ export default function Welcome() {
         </View>
         <View style={styles.authCard}>
           <View style={[styles.section, { marginTop: 30 }]}>
-            <TouchableOpacity style={[styles.button, styles.primaryButton]}>
+            <TouchableOpacity
+              style={[styles.button, styles.primaryButton]}
+              onPress={() => router.push("/login")}
+            >
               <ThemedText style={styles.primaryButtonText}>
                 Continue with email
               </ThemedText>

@@ -1,9 +1,13 @@
 import { useFonts } from "expo-font";
-import { SplashScreen, Stack } from "expo-router";
-import { useCallback } from "react";
+import { SplashScreen, Stack, useRouter, useSegments } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 import "react-native-reanimated";
+import { auth } from "../firebaseConfig";
 
 export default function RootLayout() {
+  const router = useRouter();
+  const segments = useSegments();
+  const [authChecked, setAuthChecked] = useState(false);
   const [fontsLoaded] = useFonts({
     "Montserrat-Black": require("../assets/fonts/Montserrat-Black.ttf"),
     "Montserrat-Bold": require("../assets/fonts/Montserrat-Bold.ttf"),
@@ -31,7 +35,22 @@ export default function RootLayout() {
     }
   }, [fontsLoaded]);
 
-  if (!fontsLoaded) return null;
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      setAuthChecked(true);
+      const inProtected = segments[0] === "(protected)";
+      if (user && !inProtected) {
+        router.replace("/(protected)/(footer)/home");
+      }
+      if (!user && inProtected) {
+        router.replace("/");
+      }
+    });
+
+    return unsubscribe;
+  }, [router, segments]);
+
+  if (!fontsLoaded || !authChecked) return null;
 
   return <Stack screenOptions={{ headerShown: false }} />;
 }
