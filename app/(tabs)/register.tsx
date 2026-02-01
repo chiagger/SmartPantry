@@ -184,7 +184,12 @@ export default function Register() {
                   email,
                   password,
                   setErrorMessage,
-                ).then(() => setLoading(false));
+                ).then(() => {
+                  setLoading(false);
+                  if (errorMessage === "") {
+                    router.replace("/(protected)/(footer)/home");
+                  }
+                });
               }}
               disabled={loading}
             >

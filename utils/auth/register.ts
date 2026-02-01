@@ -17,7 +17,9 @@ export const handleRegisterEmail = async (
     password: string,
     setErrorMessage: (message: string) => void,
 ) => {
+    console.log("enters")
     if (name && surname && email && password) {
+        console.log("valid fields", name, surname, email, password)
         try {
             const usersCollection = collection(db, "users");
             const q = query(usersCollection, where("email", "==", `${email}`));
