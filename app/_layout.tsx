@@ -1,4 +1,5 @@
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import { onAuthStateChanged } from "@react-native-firebase/auth";
 import { useFonts } from "expo-font";
 import { SplashScreen, Stack, useRouter, useSegments } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
@@ -48,7 +49,7 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
       setAuthChecked(true);
       const inProtected = segments[0] === "(protected)";
       if (user && !inProtected) {
