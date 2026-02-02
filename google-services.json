@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "64338584040-j9h5dec4ehhseblgn67fprr31hnafh5l.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.smartpantry.smartpantry",
+            "certificate_hash": "0939c25574450e1640db120150f6d3aeb2bb506b"
+          }
+        },
+        {
           "client_id": "64338584040-7p4bsgv1egkdcdba1jhooduh7v046eqk.apps.googleusercontent.com",
           "client_type": 3
         }

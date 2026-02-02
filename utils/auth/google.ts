@@ -18,9 +18,11 @@ import { Alert } from "react-native";
 
 export const googleAuth = async () => {
     try {
-        await GoogleSignin.hasPlayServices();
-        const user = await GoogleSignin.signIn();
 
+        await GoogleSignin.hasPlayServices();
+
+        const user = await GoogleSignin.signIn();
+        console.log("ok")
         const idToken = user.data?.idToken;
 
         if (idToken) {
@@ -51,6 +53,7 @@ export const googleAuth = async () => {
             router.navigate("(protected)/(withFooter)/home" as Href);
         }
     } catch (error) {
+        console.log(error)
         Alert.alert(
             "Errore",
             "Si è verificato un errore durante il login con Google. Riprova più tardi."

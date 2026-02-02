@@ -1,3 +1,4 @@
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { useFonts } from "expo-font";
 import { SplashScreen, Stack, useRouter, useSegments } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
@@ -34,6 +35,17 @@ export default function RootLayout() {
       await SplashScreen.hideAsync();
     }
   }, [fontsLoaded]);
+
+  useEffect(() => {
+    GoogleSignin.configure({
+      iosClientId:
+        "64338584040-tq0q154t3k10po6h0pa7nhevojb7mgsl.apps.googleusercontent.com",
+      webClientId:
+        "64338584040-7p4bsgv1egkdcdba1jhooduh7v046eqk.apps.googleusercontent.com",
+      offlineAccess: true,
+      forceCodeForRefreshToken: true,
+    });
+  }, []);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
