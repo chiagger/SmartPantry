@@ -1,5 +1,6 @@
 import { ThemedText } from "@/components/ThemedText";
 import colors from "@/constants/Colors";
+import { googleAuth } from "@/utils/auth/google";
 import { router } from "expo-router";
 import {
   Dimensions,
@@ -64,7 +65,10 @@ export default function Welcome() {
               <View style={styles.dividerLine} />
             </View>
 
-            <TouchableOpacity style={[styles.button, styles.googleButton]}>
+            <TouchableOpacity
+              style={[styles.button, styles.googleButton]}
+              onPress={() => googleAuth()}
+            >
               <ThemedText style={styles.googleButtonText}>
                 Continue with Google
               </ThemedText>
