@@ -319,6 +319,8 @@ function createStyles(c: typeof colors.dark) {
       fontFamily: "Montserrat-Regular",
       fontSize: 13,
       textAlign: "center",
+      alignSelf: "center",
+      width: "100%",
     },
     flex: {
       flex: 1,

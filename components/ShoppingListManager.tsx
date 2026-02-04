@@ -1,0 +1,599 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Animated,
+  Easing,
+  FlatList,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+
+import FoodIconSearch, { Match } from "@/components/FoodIconSearch";
+import colors from "@/constants/Colors";
+import { auth, db } from "@/firebaseConfig";
+import { FOOD_ICON_INDEX } from "@/utils/foodIconIndex";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { onAuthStateChanged } from "@react-native-firebase/auth";
+import type { FirebaseFirestoreTypes } from "@react-native-firebase/firestore";
+import {
+  collection,
+  doc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+} from "@react-native-firebase/firestore";
+
+type Item = {
+  id: string;
+  key: string;
+  source: number;
+  label: string;
+};
+
+function toItem(id: string, key: string, label?: string): Item {
+  return { id, key, source: FOOD_ICON_INDEX[key], label: label ?? key };
+}
+
+function normalizeLabel(input: string): string {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+export default function ShoppingListManager() {
+  const theme = "dark";
+  const c = colors[theme];
+
+  const currentListRef = useRef<FlatList<Item> | null>(null);
+  const [currentList, setCurrentList] = useState<Item[]>([]);
+  const [pastList, setPastList] = useState<Item[]>([]);
+
+  const currentIds = useMemo(
+    () => new Set(currentList.map((i) => i.id)),
+    [currentList],
+  );
+  const pastIds = useMemo(() => new Set(pastList.map((i) => i.id)), [pastList]);
+
+  const [notice, setNotice] = useState<string | null>(null);
+  const [activeUid, setActiveUid] = useState<string | null>(null);
+  const bounceAnim = useRef(new Animated.Value(0)).current;
+  const [currentListHeight, setCurrentListHeight] = useState(0);
+  const [pastListHeight, setPastListHeight] = useState(0);
+  const [currentAtEnd, setCurrentAtEnd] = useState(false);
+  const [pastAtEnd, setPastAtEnd] = useState(false);
+
+  useEffect(() => {
+    let unsubCurrent: (() => void) | undefined;
+    let unsubPast: (() => void) | undefined;
+
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      setActiveUid(user?.uid ?? null);
+      if (unsubCurrent) {
+        unsubCurrent();
+        unsubCurrent = undefined;
+      }
+      if (unsubPast) {
+        unsubPast();
+        unsubPast = undefined;
+      }
+
+      if (!user) {
+        setCurrentList([]);
+        setPastList([]);
+        return;
+      }
+
+      const itemsRef = collection(db, "users", user.uid, "shopping_items");
+      const currentQuery = query(
+        itemsRef,
+        where("deleted", "==", false),
+        where("status", "==", "current"),
+      );
+      const pastQuery = query(
+        itemsRef,
+        where("deleted", "==", false),
+        where("status", "==", "past"),
+      );
+
+      unsubCurrent = onSnapshot(
+        currentQuery,
+        (snap) => {
+          if (!snap) return;
+          const next = snap.docs
+            .map((docSnap: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+              const data = docSnap.data() as {
+                label: string;
+                iconKey: string;
+                updatedAt?: FirebaseFirestoreTypes.Timestamp | null;
+              };
+              return {
+                item: toItem(docSnap.id, data.iconKey, data.label),
+                updatedAt: data.updatedAt?.toMillis?.() ?? 0,
+              };
+            })
+            .sort(
+              (
+                a: { item: Item; updatedAt: number },
+                b: { item: Item; updatedAt: number },
+              ) => b.updatedAt - a.updatedAt,
+            )
+            .map((entry: { item: Item; updatedAt: number }) => entry.item);
+          setCurrentList(next);
+        },
+        (error) => {
+          setNotice(`Current list error: ${error.message}`);
+        },
+      );
+
+      unsubPast = onSnapshot(
+        pastQuery,
+        (snap) => {
+          if (!snap) return;
+          const next = snap.docs
+            .map((docSnap: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+              const data = docSnap.data() as {
+                label: string;
+                iconKey: string;
+                lastUsedAt?: FirebaseFirestoreTypes.Timestamp | null;
+              };
+              return {
+                item: toItem(docSnap.id, data.iconKey, data.label),
+                lastUsedAt: data.lastUsedAt?.toMillis?.() ?? 0,
+              };
+            })
+            .sort(
+              (
+                a: { item: Item; lastUsedAt: number },
+                b: { item: Item; lastUsedAt: number },
+              ) => b.lastUsedAt - a.lastUsedAt,
+            )
+            .map((entry: { item: Item; lastUsedAt: number }) => entry.item);
+          setPastList(next);
+        },
+        (error) => {
+          setNotice(`Past list error: ${error.message}`);
+        },
+      );
+    });
+
+    return () => {
+      unsubAuth();
+      if (unsubCurrent) unsubCurrent();
+      if (unsubPast) unsubPast();
+    };
+  }, []);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bounceAnim, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(bounceAnim, {
+          toValue: 0,
+          duration: 700,
+          easing: Easing.in(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [bounceAnim]);
+
+  async function addToCurrent(match: Match, inputLabel?: string) {
+    const item: Item = {
+      id: normalizeLabel(inputLabel?.trim() || match.key),
+      key: match.key,
+      source: match.source,
+      label: inputLabel?.trim() || match.key,
+    };
+    if (!item.label || !item.id) return;
+    if (currentIds.has(item.id)) {
+      setNotice(`"${item.label}" is already in your list`);
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const itemRef = doc(db, "users", user.uid, "shopping_items", item.id);
+    await setDoc(
+      itemRef,
+      {
+        label: item.label,
+        iconKey: item.key,
+        status: "current",
+        deleted: false,
+        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+    setNotice(null);
+    requestAnimationFrame(() => {
+      currentListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    });
+  }
+
+  async function moveToPast(item: Item) {
+    if (pastIds.has(item.id)) return;
+    const user = auth.currentUser;
+    if (!user) return;
+    const itemRef = doc(db, "users", user.uid, "shopping_items", item.id);
+    await updateDoc(itemRef, {
+      status: "past",
+      lastUsedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
+
+  function renderItem({
+    item,
+    onPress,
+    onDelete,
+  }: {
+    item: Item;
+    onPress: (i: Item) => void;
+    onDelete?: (i: Item) => void;
+  }) {
+    return (
+      <View style={[styles.row, { borderColor: c.card }]}>
+        <Pressable
+          onPress={() => onPress(item)}
+          style={({ pressed }) => [styles.rowMain, pressed && { opacity: 0.7 }]}
+        >
+          <Image source={item.source} style={styles.rowIcon} />
+          <Text style={[styles.rowText, { color: c.text }]}>{item.label}</Text>
+        </Pressable>
+        {onDelete ? (
+          <Pressable
+            onPress={() => onDelete(item)}
+            style={({ pressed }) => [
+              styles.deleteButton,
+              { backgroundColor: c.alert },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <MaterialCommunityIcons name="close" size={10} color="#fff" />
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.heroCard}>
+        <Text style={[styles.cardTitle, { color: c.text }]}>
+          Build your list
+        </Text>
+        <Text style={[styles.cardSubtitle, { color: c.text }]}>
+          Search and add items to your current list.
+        </Text>
+        <FoodIconSearch onSubmit={addToCurrent} showPreview={false} />
+      </View>
+      {notice ? (
+        <Text style={[styles.notice, { color: c.primary }]}>{notice}</Text>
+      ) : null}
+      {!activeUid ? (
+        <Text style={[styles.notice, { color: c.alert }]}>
+          Not signed in. Lists won’t load.
+        </Text>
+      ) : null}
+
+      <View style={styles.listSection}>
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { color: c.text }]}>
+            Groceries List
+          </Text>
+          <Text style={[styles.sectionMeta, { color: c.text }]}>
+            Tap to move
+          </Text>
+        </View>
+        <View
+          style={[styles.card, styles.listCard]}
+          onLayout={(e) => setCurrentListHeight(e.nativeEvent.layout.height)}
+        >
+          <FlatList
+            ref={currentListRef}
+            data={currentList}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) =>
+              renderItem({
+                item,
+                onPress: moveToPast,
+                onDelete: async (i) => {
+                  const user = auth.currentUser;
+                  if (!user) return;
+                  const itemRef = doc(
+                    db,
+                    "users",
+                    user.uid,
+                    "shopping_items",
+                    i.id,
+                  );
+                  await updateDoc(itemRef, {
+                    deleted: true,
+                    updatedAt: serverTimestamp(),
+                  });
+                },
+              })
+            }
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator
+            indicatorStyle="white"
+            scrollEventThrottle={16}
+            onScroll={(e) => {
+              const { layoutMeasurement, contentOffset, contentSize } =
+                e.nativeEvent;
+              const atEnd =
+                layoutMeasurement.height + contentOffset.y >=
+                contentSize.height - 4;
+              setCurrentAtEnd(atEnd);
+            }}
+          />
+          <View pointerEvents="none" style={styles.fadeTop} />
+          <View pointerEvents="none" style={styles.fadeBottom} />
+          {currentList.length > 4 && !currentAtEnd ? (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.scrollHintOverlay,
+                {
+                  opacity: bounceAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.6, 1],
+                  }),
+                },
+              ]}
+            >
+              <View style={styles.scrollHintPill}>
+                <MaterialCommunityIcons
+                  name="chevron-down"
+                  size={16}
+                  color="rgba(255,255,255,0.9)"
+                />
+                <Text style={styles.scrollHintText}>Scroll</Text>
+              </View>
+            </Animated.View>
+          ) : null}
+        </View>
+      </View>
+
+      <View style={styles.listSection}>
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { color: c.text }]}>
+            Previous Items
+          </Text>
+          <Text style={[styles.sectionMeta, { color: c.text }]}>
+            Tap to re-add
+          </Text>
+        </View>
+        <View
+          style={[styles.card, styles.listCard]}
+          onLayout={(e) => setPastListHeight(e.nativeEvent.layout.height)}
+        >
+          <FlatList
+            data={pastList}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) =>
+              renderItem({
+                item,
+                onPress: (i) => addToCurrent(i, i.label),
+                onDelete: async (i) => {
+                  const user = auth.currentUser;
+                  if (!user) return;
+                  const itemRef = doc(
+                    db,
+                    "users",
+                    user.uid,
+                    "shopping_items",
+                    i.id,
+                  );
+                  await updateDoc(itemRef, {
+                    deleted: true,
+                    updatedAt: serverTimestamp(),
+                  });
+                },
+              })
+            }
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator
+            indicatorStyle="white"
+            scrollEventThrottle={16}
+            onScroll={(e) => {
+              const { layoutMeasurement, contentOffset, contentSize } =
+                e.nativeEvent;
+              const atEnd =
+                layoutMeasurement.height + contentOffset.y >=
+                contentSize.height - 4;
+              setPastAtEnd(atEnd);
+            }}
+          />
+          <View pointerEvents="none" style={styles.fadeTop} />
+          <View pointerEvents="none" style={styles.fadeBottom} />
+          {pastList.length > 4 && !pastAtEnd ? (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.scrollHintOverlay,
+                {
+                  opacity: bounceAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.6, 1],
+                  }),
+                },
+              ]}
+            >
+              <View style={styles.scrollHintPill}>
+                <MaterialCommunityIcons
+                  name="chevron-down"
+                  size={16}
+                  color="rgba(255,255,255,0.9)"
+                />
+                <Text style={styles.scrollHintText}>Scroll</Text>
+              </View>
+            </Animated.View>
+          ) : null}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    width: "100%",
+    gap: 16,
+    paddingHorizontal: 20,
+  },
+  heroCard: {
+    backgroundColor: "rgba(16,16,16,0.92)",
+    borderRadius: 24,
+    padding: 18,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 8,
+    marginTop: "10%",
+  },
+  card: {
+    backgroundColor: "rgba(18,18,18,0.88)",
+    borderRadius: 20,
+    padding: 14,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  listCard: {
+    maxHeight: 250,
+    minHeight: 120,
+    position: "relative",
+    overflow: "hidden",
+  },
+  cardTitle: {
+    fontSize: 22,
+    fontFamily: "Montserrat-SemiBold",
+  },
+  cardSubtitle: {
+    fontFamily: "Montserrat-ExtraLight",
+    opacity: 0.9,
+    fontSize: 13,
+  },
+  listSection: {
+    width: "100%",
+    gap: 8,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 6,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontFamily: "Montserrat-SemiBold",
+  },
+  sectionMeta: {
+    fontSize: 12,
+    fontFamily: "Montserrat-Regular",
+    opacity: 0.7,
+  },
+  listContent: {
+    gap: 10,
+  },
+  fadeTop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 14,
+    backgroundColor: "rgba(18,18,18,0.9)",
+  },
+  fadeBottom: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 16,
+    backgroundColor: "rgba(18,18,18,0.9)",
+  },
+  scrollHintOverlay: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: 8,
+    alignItems: "center",
+  },
+  scrollHintPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+  },
+  scrollHintText: {
+    fontSize: 10,
+    color: "rgba(255,255,255,0.8)",
+    fontFamily: "Montserrat-SemiBold",
+  },
+  notice: {
+    fontSize: 12,
+    paddingHorizontal: 6,
+    textAlign: "center",
+    alignSelf: "center",
+    width: "100%",
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 10,
+    borderWidth: 1,
+    overflow: "hidden",
+    borderColor: "rgba(255,255,255,0.16)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  rowMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+  },
+  rowIcon: {
+    width: 24,
+    height: 24,
+  },
+  rowText: {
+    fontSize: 14,
+    textTransform: "capitalize",
+  },
+  deleteButton: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+});

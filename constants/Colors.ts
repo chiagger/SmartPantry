@@ -11,6 +11,7 @@ const colors = {
 
     // Neutrals
     gray: '#DAD7CD',           // Cool Stone Gray
+    icon: '#B7B7AE',
     text: '#333533',           // Charcoal
     card: '#FFFFFF',
   },
@@ -28,6 +29,7 @@ const colors = {
 
     // Neutrals
     gray: '#999988',           // Muted for dark surfaces
+    icon: '#B9B9AE',
     text: '#EDEDE7',           // Off-white for reading
   }
 };
