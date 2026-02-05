@@ -89,11 +89,7 @@ function levenshtein(a: string, b: string): number {
     let prev = i + 1;
     for (let j = 0; j < b.length; j++) {
       const cost = a[i] === b[j] ? 0 : 1;
-      const next = Math.min(
-        rows[j + 1] + 1,
-        prev + 1,
-        rows[j] + cost
-      );
+      const next = Math.min(rows[j + 1] + 1, prev + 1, rows[j] + cost);
       rows[j] = prev;
       prev = next;
     }
@@ -185,15 +181,12 @@ export default function FoodIconSearch({
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
 
-  const match = useMemo(
-    () => findBestMatch(submittedQuery),
-    [submittedQuery]
-  );
+  const match = useMemo(() => findBestMatch(submittedQuery), [submittedQuery]);
 
   return (
     <View style={styles.container}>
       <TextInput
-        placeholder="Search for a food icon"
+        placeholder="Search for a food item"
         placeholderTextColor={c.icon}
         value={query}
         onChangeText={setQuery}
