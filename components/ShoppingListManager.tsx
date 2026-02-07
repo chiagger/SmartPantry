@@ -53,16 +53,27 @@ function normalizeLabel(input: string): string {
 export default function ShoppingListManager() {
   const { theme, colors: c } = useTheme();
   const isDark = theme === "dark";
-  const surfaceCard = isDark ? "rgba(18,18,18,0.88)" : "rgba(255,255,255,0.95)";
-  const surfaceHero = isDark ? "rgba(16,16,16,0.92)" : "rgba(255,255,255,0.98)";
-  const surfaceRow = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)";
-  const surfaceBorder = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)";
-  const fadeColor = isDark ? "rgba(18,18,18,0.9)" : "rgba(255,255,255,0.95)";
-  const dimmedTextColor = isDark ? c.gray : "rgba(51,53,51,0.5)";
-  const dimmedOpacity = isDark ? 0.55 : 0.75;
+  const surfaceCard = isDark
+    ? "rgba(18,18,18,0.88)"
+    : "rgba(255,255,255,0.96)";
+  const surfaceHero = isDark
+    ? "rgba(16,16,16,0.92)"
+    : "rgba(255,255,255,0.98)";
+  const surfaceRow = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)";
+  const surfaceBorder = isDark
+    ? "rgba(255,255,255,0.08)"
+    : "rgba(0,0,0,0.12)";
+  const fadeColor = isDark
+    ? "rgba(18,18,18,0.9)"
+    : "rgba(255,255,255,0.95)";
+  const dimmedTextColor = isDark ? c.gray : "rgba(43,45,45,0.65)";
+  const dimmedOpacity = isDark ? 0.55 : 0.82;
   const subtitleColor = isDark
     ? "rgba(237,237,231,0.85)"
-    : "rgba(51,53,51,0.7)";
+    : "rgba(43,45,45,0.85)";
+  const sectionMetaColor = isDark
+    ? "rgba(255,255,255,0.7)"
+    : "rgba(43,45,45,0.65)";
   const scrollPillBg = isDark ? "rgba(0,0,0,0.65)" : "rgba(255,255,255,0.85)";
   const scrollPillBorder = isDark
     ? "rgba(255,255,255,0.15)"
@@ -389,7 +400,7 @@ export default function ShoppingListManager() {
             <Text style={[styles.sectionTitle, { color: c.text }]}>
               Groceries List
             </Text>
-            <Text style={[styles.sectionMeta, { color: c.text }]}>
+            <Text style={[styles.sectionMeta, { color: sectionMetaColor }]}>
               Swipe right if bought
             </Text>
           </View>
@@ -489,7 +500,7 @@ export default function ShoppingListManager() {
             <Text style={[styles.sectionTitle, { color: c.text }]}>
               Previous Items
             </Text>
-            <Text style={[styles.sectionMeta, { color: c.text }]}>
+            <Text style={[styles.sectionMeta, { color: sectionMetaColor }]}>
               Swipe right to re-add
             </Text>
           </View>
@@ -593,13 +604,17 @@ export default function ShoppingListManager() {
       ) : null}
 
       <View style={styles.searchDockWrapper} pointerEvents="box-none">
-        <Animated.View style={[styles.searchDock, { bottom: keyboardOffsetAnim }]}>
+        <Animated.View
+          style={[styles.searchDock, { bottom: keyboardOffsetAnim }]}
+        >
           <View
             style={[
               styles.heroCard,
               {
-                backgroundColor: isDark ? surfaceHero : "rgba(163,177,138,0.18)",
-                borderColor: isDark ? c.olive : "rgba(88,129,87,0.6)",
+                backgroundColor: isDark
+                  ? surfaceHero
+                  : "rgba(163,177,138,0.28)",
+                borderColor: isDark ? c.olive : "rgba(88,129,87,0.75)",
                 shadowOpacity: isDark ? styles.heroCard.shadowOpacity : 0,
                 elevation: isDark ? styles.heroCard.elevation : 0,
               },
@@ -702,8 +717,7 @@ const styles = StyleSheet.create({
   },
   cardSubtitle: {
     marginTop: -10,
-    fontFamily: "Montserrat-ExtraLight",
-    opacity: 0.9,
+    fontFamily: "Montserrat-Regular",
     fontSize: 13,
   },
   listSection: {
@@ -724,7 +738,6 @@ const styles = StyleSheet.create({
   sectionMeta: {
     fontSize: 10,
     fontFamily: "Montserrat-Regular",
-    opacity: 0.7,
     marginBottom: -10,
   },
   listContent: {

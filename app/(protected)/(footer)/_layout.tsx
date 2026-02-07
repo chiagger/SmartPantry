@@ -1,5 +1,6 @@
 import { Tabs } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useTheme } from "@/context/ThemeContext";
 
 type TabConfig = {
   name: string;
@@ -13,15 +14,20 @@ const tabs: TabConfig[] = [
 ];
 
 export default function ProtectedTabsLayout() {
+  const { theme, colors: c } = useTheme();
+  const isDark = theme === "dark";
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#ffffff",
-        tabBarInactiveTintColor: "rgba(255,255,255,0.6)",
+        tabBarActiveTintColor: isDark ? "#ffffff" : c.text,
+        tabBarInactiveTintColor: isDark
+          ? "rgba(255,255,255,0.6)"
+          : "rgba(51,53,51,0.5)",
         tabBarStyle: {
-          backgroundColor: "#0d0f16",
-          borderTopColor: "rgba(255,255,255,0.12)",
+          backgroundColor: isDark ? "#0d0f16" : c.background,
+          borderTopColor: isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)",
         },
       }}
     >

@@ -192,9 +192,9 @@ export default function FoodIconSearch({
       : variant === "light"
         ? {
             backgroundColor: "#FFFFFF",
-            borderColor: "rgba(88,129,87,0.55)",
+            borderColor: "rgba(88,129,87,0.75)",
             textColor: c.text,
-            placeholder: "rgba(40,60,40,0.55)",
+            placeholder: "rgba(40,60,40,0.65)",
           }
         : {
             backgroundColor: "rgba(255,255,255,0.08)",
@@ -248,9 +248,9 @@ export default function FoodIconSearch({
 const styles = StyleSheet.create({
   container: {
     width: "100%",
-    alignItems: "center",
+    alignItems: "stretch",
     gap: 16,
-    paddingHorizontal: 8,
+    paddingHorizontal: 0,
   },
   inputShell: {
     width: "100%",
