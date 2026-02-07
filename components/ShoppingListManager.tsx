@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Animated,
   Easing,
@@ -94,9 +94,6 @@ export default function ShoppingListManager() {
   const [notice, setNotice] = useState<string | null>(null);
   const [activeUid, setActiveUid] = useState<string | null>(null);
   const bounceAnim = useRef(new Animated.Value(0)).current;
-  const AnimatedPressable = useRef(
-    Animated.createAnimatedComponent(Pressable),
-  ).current;
   const [currentAtEnd, setCurrentAtEnd] = useState(false);
   const [pastAtEnd, setPastAtEnd] = useState(false);
   const [searchDockHeight, setSearchDockHeight] = useState(0);
@@ -105,11 +102,25 @@ export default function ShoppingListManager() {
   const tabBarHeight = Platform.OS === "android" ? 56 : 0;
   const keyboardLift = Math.max(0, keyboardOffset - tabBarHeight);
   const keyboardVisible = keyboardOffset > 0;
+  const defaultKeyboardHeight = Platform.OS === "android" ? 280 : 300;
+  const lastKeyboardHeight = useRef(defaultKeyboardHeight);
   const listDimOpacity = keyboardOffsetAnim.interpolate({
     inputRange: [0, 200],
     outputRange: [1, 0.35],
     extrapolate: "clamp",
   });
+
+  const animateKeyboard = useCallback(
+    (height: number, duration: number) => {
+      Animated.timing(keyboardOffsetAnim, {
+        toValue: Math.max(0, height - tabBarHeight),
+        duration,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+    },
+    [keyboardOffsetAnim, tabBarHeight],
+  );
 
   useEffect(() => {
     const showEvent =
@@ -119,29 +130,24 @@ export default function ShoppingListManager() {
 
     const showSub = Keyboard.addListener(showEvent, (e) => {
       const height = e.endCoordinates?.height ?? 0;
+      if (height > 0) {
+        lastKeyboardHeight.current = height;
+      }
       setKeyboardOffset(height);
-      Animated.timing(keyboardOffsetAnim, {
-        toValue: Math.max(0, height - tabBarHeight),
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }).start();
+      const duration = e.duration ?? (Platform.OS === "android" ? 160 : 220);
+      animateKeyboard(height, duration);
     });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
+    const hideSub = Keyboard.addListener(hideEvent, (e) => {
       setKeyboardOffset(0);
-      Animated.timing(keyboardOffsetAnim, {
-        toValue: 0,
-        duration: 200,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }).start();
+      const duration = e?.duration ?? (Platform.OS === "android" ? 160 : 200);
+      animateKeyboard(0, duration);
     });
 
     return () => {
       showSub.remove();
       hideSub.remove();
     };
-  }, []);
+  }, [animateKeyboard]);
 
   useEffect(() => {
     let unsubCurrent: (() => void) | undefined;
@@ -300,13 +306,34 @@ export default function ShoppingListManager() {
     });
   }
 
+  async function movePastToCurrent(item: Item) {
+    if (currentIds.has(item.id)) {
+      setNotice(`"${item.label}" is already in your list`);
+      return;
+    }
+    const user = auth.currentUser;
+    if (!user) return;
+    const itemRef = doc(db, "users", user.uid, "shopping_items", item.id);
+    await updateDoc(itemRef, {
+      status: "current",
+      deleted: false,
+      updatedAt: serverTimestamp(),
+    });
+    setNotice(null);
+    requestAnimationFrame(() => {
+      currentListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    });
+  }
+
   async function moveToPast(item: Item) {
     if (pastIds.has(item.id)) return;
+    const { base } = parseQuantity(item.label);
     const user = auth.currentUser;
     if (!user) return;
     const itemRef = doc(db, "users", user.uid, "shopping_items", item.id);
     await updateDoc(itemRef, {
       status: "past",
+      label: base || item.label,
       lastUsedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -342,11 +369,13 @@ export default function ShoppingListManager() {
     onPress,
     onDelete,
     dimmed,
+    showQuantity = true,
   }: {
     item: Item;
     onPress: (i: Item) => void;
     onDelete?: (i: Item) => void;
     dimmed?: boolean;
+    showQuantity?: boolean;
   }) {
     const { qty, base } = parseQuantity(item.label);
     const rowContent = (
@@ -371,25 +400,39 @@ export default function ShoppingListManager() {
             {base}
           </Text>
         </Pressable>
-        <View style={styles.qtyControlRow}>
-          <Pressable
-            onPress={() => updateQuantity(item, Math.max(1, qty - 1))}
-            style={({ pressed }) => [
-              styles.qtyButton,
-              {
-                borderColor: isDark
-                  ? "rgba(255,255,255,0.2)"
-                  : "rgba(0,0,0,0.2)",
-                backgroundColor: isDark
-                  ? "rgba(163,177,138,0.18)"
-                  : "rgba(163,177,138,0.16)",
-              },
-              pressed && { opacity: 0.7 },
-            ]}
-          >
+        {showQuantity ? (
+          <View style={styles.qtyControlRow}>
+            <Pressable
+              onPress={() => updateQuantity(item, Math.max(1, qty - 1))}
+              style={({ pressed }) => [
+                styles.qtyButton,
+                {
+                  borderColor: isDark
+                    ? "rgba(255,255,255,0.2)"
+                    : "rgba(0,0,0,0.2)",
+                  backgroundColor: isDark
+                    ? "rgba(163,177,138,0.18)"
+                    : "rgba(163,177,138,0.16)",
+                },
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.qtyButtonText,
+                  {
+                    color: isDark
+                      ? "rgba(237,237,231,0.9)"
+                      : "rgba(43,45,45,0.85)",
+                  },
+                ]}
+              >
+                -
+              </Text>
+            </Pressable>
             <Text
               style={[
-                styles.qtyButtonText,
+                styles.qtyValue,
                 {
                   color: isDark
                     ? "rgba(237,237,231,0.9)"
@@ -397,52 +440,40 @@ export default function ShoppingListManager() {
                 },
               ]}
             >
-              -
+              {qty}
             </Text>
-          </Pressable>
-          <Text
-            style={[
-              styles.qtyValue,
-              {
-                color: isDark
-                  ? "rgba(237,237,231,0.9)"
-                  : "rgba(43,45,45,0.85)",
-              },
-            ]}
-          >
-            {qty}
-          </Text>
-          <Pressable
-            onPress={() =>
-              updateQuantity(item, qty >= maxQuickQty ? 1 : qty + 1)
-            }
-            style={({ pressed }) => [
-              styles.qtyButton,
-              {
-                borderColor: isDark
-                  ? "rgba(255,255,255,0.2)"
-                  : "rgba(0,0,0,0.2)",
-                backgroundColor: isDark
-                  ? "rgba(163,177,138,0.18)"
-                  : "rgba(163,177,138,0.16)",
-              },
-              pressed && { opacity: 0.7 },
-            ]}
-          >
-            <Text
-              style={[
-                styles.qtyButtonText,
+            <Pressable
+              onPress={() =>
+                updateQuantity(item, qty >= maxQuickQty ? 1 : qty + 1)
+              }
+              style={({ pressed }) => [
+                styles.qtyButton,
                 {
-                  color: isDark
-                    ? "rgba(237,237,231,0.9)"
-                    : "rgba(43,45,45,0.85)",
+                  borderColor: isDark
+                    ? "rgba(255,255,255,0.2)"
+                    : "rgba(0,0,0,0.2)",
+                  backgroundColor: isDark
+                    ? "rgba(163,177,138,0.18)"
+                    : "rgba(163,177,138,0.16)",
                 },
+                pressed && { opacity: 0.7 },
               ]}
             >
-              +
-            </Text>
-          </Pressable>
-        </View>
+              <Text
+                style={[
+                  styles.qtyButtonText,
+                  {
+                    color: isDark
+                      ? "rgba(237,237,231,0.9)"
+                      : "rgba(43,45,45,0.85)",
+                  },
+                ]}
+              >
+                +
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
     );
 
@@ -616,8 +647,9 @@ export default function ShoppingListManager() {
               renderItem={({ item }) =>
                 renderItem({
                   item,
-                  onPress: (i) => addToCurrent(i, i.label),
+                  onPress: movePastToCurrent,
                   dimmed: true,
+                  showQuantity: false,
                   onDelete: async (i) => {
                     const user = auth.currentUser;
                     if (!user) return;
@@ -736,11 +768,20 @@ export default function ShoppingListManager() {
                 Not signed in. Lists won’t load.
               </Text>
             ) : null}
-            <FoodIconSearch
-              onSubmit={addToCurrent}
-              showPreview={false}
-              variant={isDark ? "dark" : "light"}
-            />
+          <FoodIconSearch
+            onSubmit={addToCurrent}
+            showPreview={false}
+            variant={isDark ? "dark" : "light"}
+            onFocus={() => {
+              const height = lastKeyboardHeight.current || defaultKeyboardHeight;
+              setKeyboardOffset(height);
+              animateKeyboard(height, Platform.OS === "android" ? 140 : 180);
+            }}
+            onBlur={() => {
+              setKeyboardOffset(0);
+              animateKeyboard(0, Platform.OS === "android" ? 160 : 200);
+            }}
+          />
           </View>
         </Animated.View>
       </View>

@@ -171,12 +171,16 @@ type FoodIconSearchProps = {
   onSubmit?: (match: Match, inputLabel: string) => void;
   showPreview?: boolean;
   variant?: "dark" | "green" | "light";
+  onFocus?: () => void;
+  onBlur?: () => void;
 };
 
 export default function FoodIconSearch({
   onSubmit,
   showPreview = true,
   variant = "dark",
+  onFocus,
+  onBlur,
 }: FoodIconSearchProps) {
   const { colors: c } = useTheme();
   const [query, setQuery] = useState("");
@@ -239,8 +243,14 @@ export default function FoodIconSearch({
           placeholderTextColor={inputTheme.placeholder}
           value={query}
           onChangeText={setQuery}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
+          onFocus={() => {
+            setIsFocused(true);
+            onFocus?.();
+          }}
+          onBlur={() => {
+            setIsFocused(false);
+            onBlur?.();
+          }}
           onSubmitEditing={() => {
             handleSubmit();
           }}
