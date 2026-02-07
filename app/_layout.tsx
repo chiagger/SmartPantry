@@ -3,6 +3,7 @@ import { onAuthStateChanged } from "@react-native-firebase/auth";
 import { useFonts } from "expo-font";
 import { SplashScreen, Stack, useRouter, useSegments } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import { auth } from "../firebaseConfig";
 
@@ -65,5 +66,9 @@ export default function RootLayout() {
 
   if (!fontsLoaded || !authChecked) return null;
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }} onLayout={onLayoutRootView}>
+      <Stack screenOptions={{ headerShown: false }} />
+    </GestureHandlerRootView>
+  );
 }

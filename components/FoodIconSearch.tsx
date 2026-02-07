@@ -170,16 +170,32 @@ function findBestMatch(input: string): Match {
 type FoodIconSearchProps = {
   onSubmit?: (match: Match, inputLabel: string) => void;
   showPreview?: boolean;
+  variant?: "dark" | "green";
 };
 
 export default function FoodIconSearch({
   onSubmit,
   showPreview = true,
+  variant = "dark",
 }: FoodIconSearchProps) {
   const theme = "dark";
   const c = colors[theme];
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
+  const inputTheme =
+    variant === "green"
+      ? {
+          backgroundColor: "rgba(0,0,0,0.18)",
+          borderColor: "rgba(0,0,0,0.35)",
+          textColor: "rgba(12,12,12,0.9)",
+          placeholder: "rgba(12,12,12,0.6)",
+        }
+      : {
+          backgroundColor: "rgba(255,255,255,0.08)",
+          borderColor: "rgba(255,255,255,0.2)",
+          textColor: c.text,
+          placeholder: c.icon,
+        };
 
   const match = useMemo(() => findBestMatch(submittedQuery), [submittedQuery]);
 
@@ -187,7 +203,7 @@ export default function FoodIconSearch({
     <View style={styles.container}>
       <TextInput
         placeholder="Search for a food item"
-        placeholderTextColor={c.icon}
+        placeholderTextColor={inputTheme.placeholder}
         value={query}
         onChangeText={setQuery}
         onSubmitEditing={() => {
@@ -196,7 +212,14 @@ export default function FoodIconSearch({
           if (onSubmit) onSubmit(findBestMatch(next), next);
           setQuery("");
         }}
-        style={[styles.input, { color: c.text, borderColor: c.icon }]}
+        style={[
+          styles.input,
+          {
+            color: inputTheme.textColor,
+            borderColor: inputTheme.borderColor,
+            backgroundColor: inputTheme.backgroundColor,
+          },
+        ]}
         autoCapitalize="none"
         autoCorrect={false}
         returnKeyType="search"

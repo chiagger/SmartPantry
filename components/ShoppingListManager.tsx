@@ -4,6 +4,8 @@ import {
   Easing,
   FlatList,
   Image,
+  Keyboard,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -27,6 +29,7 @@ import {
   updateDoc,
   where,
 } from "@react-native-firebase/firestore";
+import { Swipeable } from "react-native-gesture-handler";
 
 type Item = {
   id: string;
@@ -64,10 +67,48 @@ export default function ShoppingListManager() {
   const [notice, setNotice] = useState<string | null>(null);
   const [activeUid, setActiveUid] = useState<string | null>(null);
   const bounceAnim = useRef(new Animated.Value(0)).current;
-  const [currentListHeight, setCurrentListHeight] = useState(0);
-  const [pastListHeight, setPastListHeight] = useState(0);
+  const AnimatedPressable = useRef(
+    Animated.createAnimatedComponent(Pressable),
+  ).current;
   const [currentAtEnd, setCurrentAtEnd] = useState(false);
   const [pastAtEnd, setPastAtEnd] = useState(false);
+  const [searchDockHeight, setSearchDockHeight] = useState(0);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+  const keyboardOffsetAnim = useRef(new Animated.Value(0)).current;
+  const tabBarHeight = Platform.OS === "android" ? 56 : 0;
+  const keyboardLift = Math.max(0, keyboardOffset - tabBarHeight);
+
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      const height = e.endCoordinates?.height ?? 0;
+      setKeyboardOffset(height);
+      Animated.timing(keyboardOffsetAnim, {
+        toValue: Math.max(0, height - tabBarHeight),
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardOffset(0);
+      Animated.timing(keyboardOffsetAnim, {
+        toValue: 0,
+        duration: 200,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     let unsubCurrent: (() => void) | undefined;
@@ -185,7 +226,7 @@ export default function ShoppingListManager() {
           easing: Easing.in(Easing.quad),
           useNativeDriver: true,
         }),
-      ])
+      ]),
     );
     loop.start();
     return () => loop.stop();
@@ -242,212 +283,284 @@ export default function ShoppingListManager() {
     item,
     onPress,
     onDelete,
+    dimmed,
   }: {
     item: Item;
     onPress: (i: Item) => void;
     onDelete?: (i: Item) => void;
+    dimmed?: boolean;
   }) {
-    return (
-      <View style={[styles.row, { borderColor: c.card }]}>
+    const rowContent = (
+      <View
+        style={[
+          styles.row,
+          { borderColor: c.card },
+          dimmed && styles.rowDimmed,
+        ]}
+      >
         <Pressable
           onPress={() => onPress(item)}
           style={({ pressed }) => [styles.rowMain, pressed && { opacity: 0.7 }]}
         >
           <Image source={item.source} style={styles.rowIcon} />
-          <Text style={[styles.rowText, { color: c.text }]}>{item.label}</Text>
+          <Text style={[styles.rowText, { color: dimmed ? c.gray : c.text }]}>
+            {item.label}
+          </Text>
         </Pressable>
-        {onDelete ? (
-          <Pressable
-            onPress={() => onDelete(item)}
-            style={({ pressed }) => [
-              styles.deleteButton,
-              { backgroundColor: c.alert },
-              pressed && { opacity: 0.7 },
-            ]}
-          >
-            <MaterialCommunityIcons name="close" size={10} color="#fff" />
-          </Pressable>
-        ) : null}
       </View>
+    );
+
+    return (
+      <Swipeable
+        overshootRight={false}
+        overshootLeft={false}
+        friction={1}
+        rightThreshold={24}
+        leftThreshold={0}
+        onSwipeableWillOpen={(direction) => {
+          if (direction === "left") {
+            onPress(item);
+          }
+        }}
+        renderLeftActions={() => <View style={styles.moveActionSpacer} />}
+        renderRightActions={() => (
+          <View style={styles.deleteAction}>
+            <Pressable
+              onPress={() => onDelete?.(item)}
+              style={({ pressed }) => [
+                styles.deleteActionButton,
+                {
+                  backgroundColor: `${c.alert}33`,
+                  borderColor: `${c.alert}66`,
+                },
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <MaterialCommunityIcons name="close" size={12} color={c.alert} />
+            </Pressable>
+          </View>
+        )}
+      >
+        {rowContent}
+      </Swipeable>
     );
   }
 
   return (
     <View style={styles.container}>
-      <View style={styles.heroCard}>
-        <Text style={[styles.cardTitle, { color: c.text }]}>
-          Build your list
-        </Text>
-        <Text style={[styles.cardSubtitle, { color: c.text }]}>
-          Search and add items to your current list.
-        </Text>
-        <FoodIconSearch onSubmit={addToCurrent} showPreview={false} />
-      </View>
-      {notice ? (
-        <Text style={[styles.notice, { color: c.primary }]}>{notice}</Text>
-      ) : null}
-      {!activeUid ? (
-        <Text style={[styles.notice, { color: c.alert }]}>
-          Not signed in. Lists won’t load.
-        </Text>
-      ) : null}
+      <AnimatedPressable
+        onPress={Keyboard.dismiss}
+        pointerEvents={keyboardOffset > 0 ? "auto" : "none"}
+        style={[
+          styles.keyboardDimmer,
+          {
+            opacity: keyboardOffsetAnim.interpolate({
+              inputRange: [0, 200],
+              outputRange: [0, 0.65],
+              extrapolate: "clamp",
+            }),
+          },
+        ]}
+      />
+      <View
+        style={[
+          styles.listsWrapper,
+          {
+            paddingBottom: Math.max(searchDockHeight + keyboardLift + 12, 12),
+          },
+        ]}
+      >
+        <View style={styles.listSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: c.text }]}>
+              Groceries List
+            </Text>
+            <Text style={[styles.sectionMeta, { color: c.text }]}>
+              Swipe right to move
+            </Text>
+          </View>
+          <View style={[styles.card, styles.listCard]}>
+            <FlatList
+              ref={currentListRef}
+              data={currentList}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) =>
+                renderItem({
+                  item,
+                  onPress: moveToPast,
+                  onDelete: async (i) => {
+                    const user = auth.currentUser;
+                    if (!user) return;
+                    const itemRef = doc(
+                      db,
+                      "users",
+                      user.uid,
+                      "shopping_items",
+                      i.id,
+                    );
+                    await updateDoc(itemRef, {
+                      deleted: true,
+                      updatedAt: serverTimestamp(),
+                    });
+                  },
+                })
+              }
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator
+              indicatorStyle="white"
+              scrollEventThrottle={16}
+              onScroll={(e) => {
+                const { layoutMeasurement, contentOffset, contentSize } =
+                  e.nativeEvent;
+                const atEnd =
+                  layoutMeasurement.height + contentOffset.y >=
+                  contentSize.height - 4;
+                setCurrentAtEnd(atEnd);
+              }}
+            />
+            <View pointerEvents="none" style={styles.fadeTop} />
+            <View pointerEvents="none" style={styles.fadeBottom} />
+            {currentList.length > 4 && !currentAtEnd ? (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.scrollHintOverlay,
+                  {
+                    opacity: bounceAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.6, 1],
+                    }),
+                  },
+                ]}
+              >
+                <View style={styles.scrollHintPill}>
+                  <MaterialCommunityIcons
+                    name="chevron-down"
+                    size={16}
+                    color="rgba(255,255,255,0.9)"
+                  />
+                  <Text style={styles.scrollHintText}>Scroll</Text>
+                </View>
+              </Animated.View>
+            ) : null}
+          </View>
+        </View>
 
-      <View style={styles.listSection}>
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: c.text }]}>
-            Groceries List
-          </Text>
-          <Text style={[styles.sectionMeta, { color: c.text }]}>
-            Tap to move
-          </Text>
-        </View>
-        <View
-          style={[styles.card, styles.listCard]}
-          onLayout={(e) => setCurrentListHeight(e.nativeEvent.layout.height)}
-        >
-          <FlatList
-            ref={currentListRef}
-            data={currentList}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) =>
-              renderItem({
-                item,
-                onPress: moveToPast,
-                onDelete: async (i) => {
-                  const user = auth.currentUser;
-                  if (!user) return;
-                  const itemRef = doc(
-                    db,
-                    "users",
-                    user.uid,
-                    "shopping_items",
-                    i.id,
-                  );
-                  await updateDoc(itemRef, {
-                    deleted: true,
-                    updatedAt: serverTimestamp(),
-                  });
-                },
-              })
-            }
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator
-            indicatorStyle="white"
-            scrollEventThrottle={16}
-            onScroll={(e) => {
-              const { layoutMeasurement, contentOffset, contentSize } =
-                e.nativeEvent;
-              const atEnd =
-                layoutMeasurement.height + contentOffset.y >=
-                contentSize.height - 4;
-              setCurrentAtEnd(atEnd);
-            }}
-          />
-          <View pointerEvents="none" style={styles.fadeTop} />
-          <View pointerEvents="none" style={styles.fadeBottom} />
-          {currentList.length > 4 && !currentAtEnd ? (
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                styles.scrollHintOverlay,
-                {
-                  opacity: bounceAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.6, 1],
-                  }),
-                },
-              ]}
-            >
-              <View style={styles.scrollHintPill}>
-                <MaterialCommunityIcons
-                  name="chevron-down"
-                  size={16}
-                  color="rgba(255,255,255,0.9)"
-                />
-                <Text style={styles.scrollHintText}>Scroll</Text>
-              </View>
-            </Animated.View>
-          ) : null}
+        <View style={styles.listSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: c.text }]}>
+              Previous Items
+            </Text>
+            <Text style={[styles.sectionMeta, { color: c.text }]}>
+              Swipe right to re-add
+            </Text>
+          </View>
+          <View style={[styles.card, styles.listCard]}>
+            <FlatList
+              data={pastList}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) =>
+                renderItem({
+                  item,
+                  onPress: (i) => addToCurrent(i, i.label),
+                  dimmed: true,
+                  onDelete: async (i) => {
+                    const user = auth.currentUser;
+                    if (!user) return;
+                    const itemRef = doc(
+                      db,
+                      "users",
+                      user.uid,
+                      "shopping_items",
+                      i.id,
+                    );
+                    await updateDoc(itemRef, {
+                      deleted: true,
+                      updatedAt: serverTimestamp(),
+                    });
+                  },
+                })
+              }
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator
+              indicatorStyle="white"
+              scrollEventThrottle={16}
+              onScroll={(e) => {
+                const { layoutMeasurement, contentOffset, contentSize } =
+                  e.nativeEvent;
+                const atEnd =
+                  layoutMeasurement.height + contentOffset.y >=
+                  contentSize.height - 4;
+                setPastAtEnd(atEnd);
+              }}
+            />
+            <View pointerEvents="none" style={styles.fadeTop} />
+            <View pointerEvents="none" style={styles.fadeBottom} />
+            {pastList.length > 4 && !pastAtEnd ? (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.scrollHintOverlay,
+                  {
+                    opacity: bounceAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.6, 1],
+                    }),
+                  },
+                ]}
+              >
+                <View style={styles.scrollHintPill}>
+                  <MaterialCommunityIcons
+                    name="chevron-down"
+                    size={16}
+                    color="rgba(255,255,255,0.9)"
+                  />
+                  <Text style={styles.scrollHintText}>Scroll</Text>
+                </View>
+              </Animated.View>
+            ) : null}
+          </View>
         </View>
       </View>
 
-      <View style={styles.listSection}>
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: c.text }]}>
-            Previous Items
-          </Text>
-          <Text style={[styles.sectionMeta, { color: c.text }]}>
-            Tap to re-add
-          </Text>
-        </View>
+      <Animated.View
+        style={[styles.searchDock, { bottom: keyboardOffsetAnim }]}
+      >
         <View
-          style={[styles.card, styles.listCard]}
-          onLayout={(e) => setPastListHeight(e.nativeEvent.layout.height)}
+          style={[
+            styles.heroCard,
+            {
+              backgroundColor: "rgba(16,16,16,0.92)",
+              borderColor: c.olive,
+            },
+          ]}
+          onLayout={(e) => setSearchDockHeight(e.nativeEvent.layout.height)}
         >
-          <FlatList
-            data={pastList}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) =>
-              renderItem({
-                item,
-                onPress: (i) => addToCurrent(i, i.label),
-                onDelete: async (i) => {
-                  const user = auth.currentUser;
-                  if (!user) return;
-                  const itemRef = doc(
-                    db,
-                    "users",
-                    user.uid,
-                    "shopping_items",
-                    i.id,
-                  );
-                  await updateDoc(itemRef, {
-                    deleted: true,
-                    updatedAt: serverTimestamp(),
-                  });
-                },
-              })
-            }
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator
-            indicatorStyle="white"
-            scrollEventThrottle={16}
-            onScroll={(e) => {
-              const { layoutMeasurement, contentOffset, contentSize } =
-                e.nativeEvent;
-              const atEnd =
-                layoutMeasurement.height + contentOffset.y >=
-                contentSize.height - 4;
-              setPastAtEnd(atEnd);
-            }}
-          />
-          <View pointerEvents="none" style={styles.fadeTop} />
-          <View pointerEvents="none" style={styles.fadeBottom} />
-          {pastList.length > 4 && !pastAtEnd ? (
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                styles.scrollHintOverlay,
-                {
-                  opacity: bounceAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.6, 1],
-                  }),
-                },
-              ]}
-            >
-              <View style={styles.scrollHintPill}>
-                <MaterialCommunityIcons
-                  name="chevron-down"
-                  size={16}
-                  color="rgba(255,255,255,0.9)"
-                />
-                <Text style={styles.scrollHintText}>Scroll</Text>
-              </View>
-            </Animated.View>
+          <Text style={[styles.cardTitle, { color: c.text }]}>
+            Build your list
+          </Text>
+          <Text
+            style={[styles.cardSubtitle, { color: "rgba(237,237,231,0.85)" }]}
+          >
+            Search and add items to your current list.
+          </Text>
+          {notice ? (
+            <Text style={[styles.notice, { color: "rgba(217,100,89,0.85)" }]}>
+              {notice}
+            </Text>
           ) : null}
+          {!activeUid ? (
+            <Text style={[styles.notice, { color: "rgba(217,100,89,0.85)" }]}>
+              Not signed in. Lists won’t load.
+            </Text>
+          ) : null}
+          <FoodIconSearch
+            onSubmit={addToCurrent}
+            showPreview={false}
+            variant="dark"
+          />
         </View>
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -457,6 +570,29 @@ const styles = StyleSheet.create({
     width: "100%",
     gap: 16,
     paddingHorizontal: 20,
+    flex: 1,
+  },
+  listsWrapper: {
+    gap: 16,
+    flex: 1,
+    marginTop: "10%",
+    zIndex: 1,
+  },
+  searchDock: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 0,
+    zIndex: 3,
+  },
+  keyboardDimmer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#000",
+    zIndex: 2,
+    top: -24,
+    bottom: -24,
   },
   heroCard: {
     backgroundColor: "rgba(16,16,16,0.92)",
@@ -470,7 +606,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 20,
     elevation: 8,
-    marginTop: "10%",
   },
   card: {
     backgroundColor: "rgba(18,18,18,0.88)",
@@ -491,6 +626,7 @@ const styles = StyleSheet.create({
     fontFamily: "Montserrat-SemiBold",
   },
   cardSubtitle: {
+    marginTop: -10,
     fontFamily: "Montserrat-ExtraLight",
     opacity: 0.9,
     fontSize: 13,
@@ -508,11 +644,13 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 17,
     fontFamily: "Montserrat-SemiBold",
+    marginBottom: -10,
   },
   sectionMeta: {
-    fontSize: 12,
+    fontSize: 10,
     fontFamily: "Montserrat-Regular",
     opacity: 0.7,
+    marginBottom: -10,
   },
   listContent: {
     gap: 10,
@@ -588,12 +726,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textTransform: "capitalize",
   },
-  deleteButton: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+  rowDimmed: {
+    opacity: 0.55,
+  },
+  moveActionSpacer: {
+    width: 72,
+  },
+  deleteAction: {
+    width: 44,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
+  },
+  deleteActionButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
   },
 });
