@@ -98,38 +98,52 @@ function levenshtein(a: string, b: string): number {
   return rows[b.length];
 }
 
-function scoreCandidate(queryTokens: string[], key: string): number {
-  if (!queryTokens.length) return 0;
+type CandidateScore = {
+  score: number;
+  strongHits: number;
+};
+
+function scoreCandidate(queryTokens: string[], key: string): CandidateScore {
+  if (!queryTokens.length) return { score: 0, strongHits: 0 };
   const aliasTokens = FOOD_ICON_ALIASES[key] ?? [];
   const keyTokens = [
     ...key.split("-").map((t) => stemToken(t)),
     ...aliasTokens.flatMap((t) => tokenize(t)),
-  ];
+  ].filter((t) => t.length > 1);
   const expanded = expandTokens(queryTokens);
 
   let score = 0;
+  let strongHits = 0;
 
   for (const q of expanded) {
+    if (q.length < 2) continue;
     for (const k of keyTokens) {
       if (k === q) {
         score += 5;
+        strongHits += 1;
         continue;
       }
-      if (k.startsWith(q) || q.startsWith(k)) {
+      if (k.length >= 3 && q.length >= 3 && (k.startsWith(q) || q.startsWith(k))) {
         score += 2;
         continue;
       }
-      if (k.includes(q) || q.includes(k)) {
+      if (k.length >= 4 && q.length >= 4 && (k.includes(q) || q.includes(k))) {
         score += 1;
         continue;
       }
-      const distance = Math.min(3, levenshtein(q, k));
-      if (distance === 1) score += 1;
-      if (distance === 2) score += 0.5;
+      if (k.length >= 3 && q.length >= 3) {
+        const distance = Math.min(3, levenshtein(q, k));
+        if (distance === 1) {
+          score += 1;
+        }
+        if (distance === 2) {
+          score += 0.5;
+        }
+      }
     }
   }
 
-  return score;
+  return { score, strongHits };
 }
 
 function findBestMatch(input: string): Match {
@@ -147,11 +161,13 @@ function findBestMatch(input: string): Match {
   }
   let bestKey = DEFAULT_ICON;
   let bestScore = -1;
+  let bestStrongHits = 0;
 
   for (const key of ICON_KEYS) {
-    const score = scoreCandidate(queryTokens, key);
+    const { score, strongHits } = scoreCandidate(queryTokens, key);
     if (score > bestScore) {
       bestScore = score;
+      bestStrongHits = strongHits;
       bestKey = key;
       continue;
     }
@@ -162,6 +178,13 @@ function findBestMatch(input: string): Match {
         bestKey = key;
       }
     }
+  }
+
+  const isMultiTokenQuery = queryTokens.length >= 2;
+  const hasStrongHit = bestStrongHits > 0;
+  const minScore = isMultiTokenQuery ? 2 : 3;
+  if (bestScore < minScore || (isMultiTokenQuery && !hasStrongHit)) {
+    return { key: DEFAULT_ICON, source: FOOD_ICON_INDEX[DEFAULT_ICON] };
   }
 
   return { key: bestKey, source: FOOD_ICON_INDEX[bestKey] };
@@ -261,18 +284,35 @@ export default function FoodIconSearch({
           autoCorrect={false}
           returnKeyType="search"
         />
+        {query.length > 0 ? (
+          <Pressable
+            onPress={() => setQuery("")}
+            accessibilityRole="button"
+            accessibilityLabel="Clear search"
+            style={({ pressed }) => [
+              styles.clearButton,
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Text style={[styles.clearText, { color: inputTheme.textColor }]}>
+              ×
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
       {isFocused ? (
         <View style={styles.qtyControlRow}>
           <Pressable
             onPress={() => setQuantity((q) => Math.max(1, q - 1))}
+            disabled={quantity <= 1}
             style={({ pressed }) => [
               styles.qtyButton,
               {
                 borderColor: qtyTheme.borderColor,
                 backgroundColor: qtyTheme.backgroundColor,
+                opacity: quantity <= 1 ? 0.4 : 1,
               },
-              pressed && { opacity: 0.7 },
+              pressed && quantity > 1 && { opacity: 0.7 },
             ]}
           >
             <Text style={[styles.qtyButtonText, { color: qtyTheme.textColor }]}>
@@ -327,6 +367,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     paddingHorizontal: 14,
     paddingVertical: 12,
+    paddingRight: 40,
+  },
+  clearButton: {
+    position: "absolute",
+    right: 10,
+    top: 0,
+    bottom: 0,
+    width: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  clearText: {
+    fontSize: 20,
+    lineHeight: 20,
+    fontFamily: "Montserrat-SemiBold",
   },
   qtyControlRow: {
     width: "100%",

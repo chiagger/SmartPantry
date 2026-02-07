@@ -82,6 +82,7 @@ export default function ShoppingListManager() {
   const maxQuickQty = 20;
 
   const currentListRef = useRef<FlatList<Item> | null>(null);
+  const recentlyReaddedRef = useRef<Set<string>>(new Set());
   const [currentList, setCurrentList] = useState<Item[]>([]);
   const [pastList, setPastList] = useState<Item[]>([]);
 
@@ -186,8 +187,8 @@ export default function ShoppingListManager() {
         currentQuery,
         (snap) => {
           if (!snap) return;
-          const next = snap.docs
-            .map((docSnap: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+          const next = snap.docs.map(
+            (docSnap: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
               const data = docSnap.data() as {
                 label: string;
                 iconKey: string;
@@ -197,15 +198,39 @@ export default function ShoppingListManager() {
                 item: toItem(docSnap.id, data.iconKey, data.label),
                 updatedAt: data.updatedAt?.toMillis?.() ?? 0,
               };
-            })
-            .sort(
-              (
-                a: { item: Item; updatedAt: number },
-                b: { item: Item; updatedAt: number },
-              ) => b.updatedAt - a.updatedAt,
-            )
-            .map((entry: { item: Item; updatedAt: number }) => entry.item);
-          setCurrentList(next);
+            },
+          );
+          setCurrentList((prev) => {
+            const prevIndex = new Map(prev.map((item, idx) => [item.id, idx]));
+            const ordered = next
+              .slice()
+              .sort(
+                (
+                  a: { item: Item; updatedAt: number },
+                  b: { item: Item; updatedAt: number },
+                ) => {
+                  const readdedA = recentlyReaddedRef.current.has(a.item.id);
+                  const readdedB = recentlyReaddedRef.current.has(b.item.id);
+                  if (readdedA && !readdedB) return -1;
+                  if (readdedB && !readdedA) return 1;
+                  const indexA = prevIndex.get(a.item.id);
+                  const indexB = prevIndex.get(b.item.id);
+                  if (indexA !== undefined && indexB !== undefined) {
+                    return indexA - indexB;
+                  }
+                  if (indexA !== undefined) return -1;
+                  if (indexB !== undefined) return 1;
+                  return b.updatedAt - a.updatedAt;
+                },
+              )
+              .map((entry) => entry.item);
+            for (const entry of ordered) {
+              if (recentlyReaddedRef.current.has(entry.id)) {
+                recentlyReaddedRef.current.delete(entry.id);
+              }
+            }
+            return ordered;
+          });
         },
         (error) => {
           setNotice(`Current list error: ${error.message}`);
@@ -311,6 +336,7 @@ export default function ShoppingListManager() {
       setNotice(`"${item.label}" is already in your list`);
       return;
     }
+    recentlyReaddedRef.current.add(item.id);
     const user = auth.currentUser;
     if (!user) return;
     const itemRef = doc(db, "users", user.uid, "shopping_items", item.id);
@@ -402,34 +428,36 @@ export default function ShoppingListManager() {
         </Pressable>
         {showQuantity ? (
           <View style={styles.qtyControlRow}>
-            <Pressable
-              onPress={() => updateQuantity(item, Math.max(1, qty - 1))}
-              style={({ pressed }) => [
-                styles.qtyButton,
-                {
-                  borderColor: isDark
-                    ? "rgba(255,255,255,0.2)"
-                    : "rgba(0,0,0,0.2)",
-                  backgroundColor: isDark
-                    ? "rgba(163,177,138,0.18)"
-                    : "rgba(163,177,138,0.16)",
-                },
-                pressed && { opacity: 0.7 },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.qtyButtonText,
+            {qty > 1 ? (
+              <Pressable
+                onPress={() => updateQuantity(item, Math.max(1, qty - 1))}
+                style={({ pressed }) => [
+                  styles.qtyButton,
                   {
-                    color: isDark
-                      ? "rgba(237,237,231,0.9)"
-                      : "rgba(43,45,45,0.85)",
+                    borderColor: isDark
+                      ? "rgba(255,255,255,0.2)"
+                      : "rgba(0,0,0,0.2)",
+                    backgroundColor: isDark
+                      ? "rgba(163,177,138,0.18)"
+                      : "rgba(163,177,138,0.16)",
                   },
+                  pressed && { opacity: 0.7 },
                 ]}
               >
-                -
-              </Text>
-            </Pressable>
+                <Text
+                  style={[
+                    styles.qtyButtonText,
+                    {
+                      color: isDark
+                        ? "rgba(237,237,231,0.9)"
+                        : "rgba(43,45,45,0.85)",
+                    },
+                  ]}
+                >
+                  -
+                </Text>
+              </Pressable>
+            ) : null}
             <Text
               style={[
                 styles.qtyValue,
