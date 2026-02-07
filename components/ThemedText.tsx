@@ -1,12 +1,11 @@
-import colors from "@/constants/Colors";
+import { useTheme } from "@/context/ThemeContext";
 import { Text, TextProps } from "react-native";
 export const ThemedText = ({
   children,
   style,
   ...rest
 }: { children: React.ReactNode } & TextProps) => {
-  const theme = "dark"; // or "light", depending on your theme logic
-  const c = colors[theme];
+  const { colors: c } = useTheme();
   return (
     <Text
       style={[

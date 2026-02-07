@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import { auth } from "../firebaseConfig";
+import { ThemeProvider } from "@/context/ThemeContext";
 
 export default function RootLayout() {
   const router = useRouter();
@@ -68,7 +69,9 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }} onLayout={onLayoutRootView}>
-      <Stack screenOptions={{ headerShown: false }} />
+      <ThemeProvider>
+        <Stack screenOptions={{ headerShown: false }} />
+      </ThemeProvider>
     </GestureHandlerRootView>
   );
 }

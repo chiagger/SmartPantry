@@ -1,5 +1,5 @@
 import { ThemedText } from "@/components/ThemedText";
-import colors from "@/constants/Colors";
+import { useTheme } from "@/context/ThemeContext";
 import { googleAuth } from "@/utils/auth/google";
 import { router } from "expo-router";
 import {
@@ -13,8 +13,7 @@ import {
 const { width, height } = Dimensions.get("screen");
 
 export default function Welcome() {
-  const theme = "dark";
-  const c = colors[theme];
+  const { colors: c } = useTheme();
   const styles = createStyles(c);
 
   return (
@@ -80,7 +79,7 @@ export default function Welcome() {
   );
 }
 
-function createStyles(c: typeof colors.dark) {
+function createStyles(c: { [key: string]: string }) {
   return StyleSheet.create({
     root: {
       alignItems: "center",

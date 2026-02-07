@@ -13,7 +13,7 @@ import {
 } from "react-native";
 
 import FoodIconSearch, { Match } from "@/components/FoodIconSearch";
-import colors from "@/constants/Colors";
+import { useTheme } from "@/context/ThemeContext";
 import { auth, db } from "@/firebaseConfig";
 import { FOOD_ICON_INDEX } from "@/utils/foodIconIndex";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -51,8 +51,30 @@ function normalizeLabel(input: string): string {
 }
 
 export default function ShoppingListManager() {
-  const theme = "dark";
-  const c = colors[theme];
+  const { theme, colors: c } = useTheme();
+  const isDark = theme === "dark";
+  const surfaceCard = isDark
+    ? "rgba(18,18,18,0.88)"
+    : "rgba(255,255,255,0.95)";
+  const surfaceHero = isDark
+    ? "rgba(16,16,16,0.92)"
+    : "rgba(255,255,255,0.98)";
+  const surfaceRow = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)";
+  const surfaceBorder = isDark
+    ? "rgba(255,255,255,0.08)"
+    : "rgba(0,0,0,0.08)";
+  const subtitleColor = isDark
+    ? "rgba(237,237,231,0.85)"
+    : "rgba(51,53,51,0.7)";
+  const scrollPillBg = isDark
+    ? "rgba(0,0,0,0.65)"
+    : "rgba(255,255,255,0.85)";
+  const scrollPillBorder = isDark
+    ? "rgba(255,255,255,0.15)"
+    : "rgba(0,0,0,0.08)";
+  const scrollTextColor = isDark
+    ? "rgba(255,255,255,0.8)"
+    : "rgba(0,0,0,0.6)";
 
   const currentListRef = useRef<FlatList<Item> | null>(null);
   const [currentList, setCurrentList] = useState<Item[]>([]);
@@ -294,7 +316,7 @@ export default function ShoppingListManager() {
       <View
         style={[
           styles.row,
-          { borderColor: c.card },
+          { borderColor: c.card, backgroundColor: surfaceRow },
           dimmed && styles.rowDimmed,
         ]}
       >
@@ -379,7 +401,13 @@ export default function ShoppingListManager() {
               Swipe right to move
             </Text>
           </View>
-          <View style={[styles.card, styles.listCard]}>
+          <View
+            style={[
+              styles.card,
+              styles.listCard,
+              { backgroundColor: surfaceCard, borderColor: surfaceBorder },
+            ]}
+          >
             <FlatList
               ref={currentListRef}
               data={currentList}
@@ -433,13 +461,23 @@ export default function ShoppingListManager() {
                   },
                 ]}
               >
-                <View style={styles.scrollHintPill}>
+                <View
+                  style={[
+                    styles.scrollHintPill,
+                    {
+                      backgroundColor: scrollPillBg,
+                      borderColor: scrollPillBorder,
+                    },
+                  ]}
+                >
                   <MaterialCommunityIcons
                     name="chevron-down"
                     size={16}
-                    color="rgba(255,255,255,0.9)"
+                    color={isDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.6)"}
                   />
-                  <Text style={styles.scrollHintText}>Scroll</Text>
+                  <Text style={[styles.scrollHintText, { color: scrollTextColor }]}>
+                    Scroll
+                  </Text>
                 </View>
               </Animated.View>
             ) : null}
@@ -455,7 +493,13 @@ export default function ShoppingListManager() {
               Swipe right to re-add
             </Text>
           </View>
-          <View style={[styles.card, styles.listCard]}>
+          <View
+            style={[
+              styles.card,
+              styles.listCard,
+              { backgroundColor: surfaceCard, borderColor: surfaceBorder },
+            ]}
+          >
             <FlatList
               data={pastList}
               keyExtractor={(item) => item.id}
@@ -509,13 +553,23 @@ export default function ShoppingListManager() {
                   },
                 ]}
               >
-                <View style={styles.scrollHintPill}>
+                <View
+                  style={[
+                    styles.scrollHintPill,
+                    {
+                      backgroundColor: scrollPillBg,
+                      borderColor: scrollPillBorder,
+                    },
+                  ]}
+                >
                   <MaterialCommunityIcons
                     name="chevron-down"
                     size={16}
-                    color="rgba(255,255,255,0.9)"
+                    color={isDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.6)"}
                   />
-                  <Text style={styles.scrollHintText}>Scroll</Text>
+                  <Text style={[styles.scrollHintText, { color: scrollTextColor }]}>
+                    Scroll
+                  </Text>
                 </View>
               </Animated.View>
             ) : null}
@@ -530,8 +584,8 @@ export default function ShoppingListManager() {
           style={[
             styles.heroCard,
             {
-              backgroundColor: "rgba(16,16,16,0.92)",
-              borderColor: c.olive,
+              backgroundColor: surfaceHero,
+              borderColor: isDark ? c.olive : "rgba(88,129,87,0.35)",
             },
           ]}
           onLayout={(e) => setSearchDockHeight(e.nativeEvent.layout.height)}
@@ -540,7 +594,7 @@ export default function ShoppingListManager() {
             Build your list
           </Text>
           <Text
-            style={[styles.cardSubtitle, { color: "rgba(237,237,231,0.85)" }]}
+            style={[styles.cardSubtitle, { color: subtitleColor }]}
           >
             Search and add items to your current list.
           </Text>
@@ -557,7 +611,7 @@ export default function ShoppingListManager() {
           <FoodIconSearch
             onSubmit={addToCurrent}
             showPreview={false}
-            variant="dark"
+            variant={isDark ? "dark" : "light"}
           />
         </View>
       </Animated.View>

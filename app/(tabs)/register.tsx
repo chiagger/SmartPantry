@@ -1,5 +1,5 @@
 import { ThemedText } from "@/components/ThemedText";
-import colors from "@/constants/Colors";
+import { useTheme } from "@/context/ThemeContext";
 import { handleRegisterEmail } from "@/utils/auth/register";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -19,8 +19,7 @@ import {
 const { width, height } = Dimensions.get("screen");
 
 export default function Register() {
-  const theme = "dark";
-  const c = colors[theme];
+  const { colors: c } = useTheme();
   const styles = createStyles(c);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -204,7 +203,7 @@ export default function Register() {
   );
 }
 
-function createStyles(c: typeof colors.dark) {
+function createStyles(c: { [key: string]: string }) {
   return StyleSheet.create({
     page: {
       flex: 1,

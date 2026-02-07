@@ -1,10 +1,9 @@
 import ShoppingListManager from "@/components/ShoppingListManager";
-import colors from "@/constants/Colors";
+import { useTheme } from "@/context/ThemeContext";
 import { View } from "react-native";
 
 export default function Home() {
-  const theme = "dark"; // or "dark", depending on your theme logic
-  const c = colors[theme];
+  const { colors: c } = useTheme();
 
   return (
     <View

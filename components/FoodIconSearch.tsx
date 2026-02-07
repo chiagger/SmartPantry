@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Image, StyleSheet, Text, TextInput, View } from "react-native";
 
-import colors from "@/constants/Colors";
+import { useTheme } from "@/context/ThemeContext";
 import { FOOD_ICON_ALIASES } from "@/utils/foodIconAliases";
 import { FOOD_ICON_INDEX } from "@/utils/foodIconIndex";
 
@@ -170,7 +170,7 @@ function findBestMatch(input: string): Match {
 type FoodIconSearchProps = {
   onSubmit?: (match: Match, inputLabel: string) => void;
   showPreview?: boolean;
-  variant?: "dark" | "green";
+  variant?: "dark" | "green" | "light";
 };
 
 export default function FoodIconSearch({
@@ -178,8 +178,7 @@ export default function FoodIconSearch({
   showPreview = true,
   variant = "dark",
 }: FoodIconSearchProps) {
-  const theme = "dark";
-  const c = colors[theme];
+  const { colors: c } = useTheme();
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
   const inputTheme =
@@ -190,12 +189,19 @@ export default function FoodIconSearch({
           textColor: "rgba(12,12,12,0.9)",
           placeholder: "rgba(12,12,12,0.6)",
         }
-      : {
-          backgroundColor: "rgba(255,255,255,0.08)",
-          borderColor: "rgba(255,255,255,0.2)",
-          textColor: c.text,
-          placeholder: c.icon,
-        };
+      : variant === "light"
+        ? {
+            backgroundColor: "rgba(0,0,0,0.04)",
+            borderColor: "rgba(0,0,0,0.15)",
+            textColor: c.text,
+            placeholder: "rgba(0,0,0,0.45)",
+          }
+        : {
+            backgroundColor: "rgba(255,255,255,0.08)",
+            borderColor: "rgba(255,255,255,0.2)",
+            textColor: c.text,
+            placeholder: c.icon,
+          };
 
   const match = useMemo(() => findBestMatch(submittedQuery), [submittedQuery]);
 
