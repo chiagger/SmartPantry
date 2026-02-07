@@ -5,10 +5,12 @@ import {
   FlatList,
   Image,
   Keyboard,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
@@ -17,13 +19,17 @@ import { useTheme } from "@/context/ThemeContext";
 import { auth, db } from "@/firebaseConfig";
 import { FOOD_ICON_INDEX } from "@/utils/foodIconIndex";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import { onAuthStateChanged } from "@react-native-firebase/auth";
 import type { FirebaseFirestoreTypes } from "@react-native-firebase/firestore";
 import {
   collection,
   doc,
+  getDoc,
   onSnapshot,
   query,
+  arrayRemove,
+  arrayUnion,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -85,6 +91,15 @@ export default function ShoppingListManager() {
   const recentlyReaddedRef = useRef<Set<string>>(new Set());
   const [currentList, setCurrentList] = useState<Item[]>([]);
   const [pastList, setPastList] = useState<Item[]>([]);
+  const [activeListId, setActiveListId] = useState<string | null>(null);
+  const [listIds, setListIds] = useState<string[]>([]);
+  const [listNames, setListNames] = useState<Record<string, string>>({});
+  const [shareCodeInput, setShareCodeInput] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [needsListSetup, setNeedsListSetup] = useState(false);
+  const [listNameInput, setListNameInput] = useState("");
+  const [copyHint, setCopyHint] = useState<"code" | "link" | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentIds = useMemo(
     () => new Set(currentList.map((i) => i.id)),
@@ -110,6 +125,32 @@ export default function ShoppingListManager() {
     outputRange: [1, 0.35],
     extrapolate: "clamp",
   });
+  const isSharedList = Boolean(activeListId && !activeListId.startsWith("user:"));
+  const shareLink =
+    isSharedList && activeListId ? `smartpantry://join?code=${activeListId}` : "";
+
+  const getItemsCollectionRef = useCallback(
+    (uid: string) => {
+      if (activeListId) {
+        if (activeListId.startsWith("user:")) {
+          return collection(db, "users", uid, "shopping_items");
+        }
+        return collection(db, "lists", activeListId, "items");
+      }
+      return collection(db, "users", uid, "shopping_items");
+    },
+    [activeListId],
+  );
+
+  const getListLabel = useCallback(
+    (id: string) => {
+      const name = listNames[id];
+      if (name) return name;
+      if (id.startsWith("user:")) return "My List";
+      return `Shared: ${id}`;
+    },
+    [listNames],
+  );
 
   const animateKeyboard = useCallback(
     (height: number, duration: number) => {
@@ -151,57 +192,90 @@ export default function ShoppingListManager() {
   }, [animateKeyboard]);
 
   useEffect(() => {
-    let unsubCurrent: (() => void) | undefined;
-    let unsubPast: (() => void) | undefined;
-
+    let unsubUser: (() => void) | undefined;
     const unsubAuth = onAuthStateChanged(auth, (user) => {
       setActiveUid(user?.uid ?? null);
-      if (unsubCurrent) {
-        unsubCurrent();
-        unsubCurrent = undefined;
-      }
-      if (unsubPast) {
-        unsubPast();
-        unsubPast = undefined;
+      if (unsubUser) {
+        unsubUser();
+        unsubUser = undefined;
       }
 
       if (!user) {
         setCurrentList([]);
         setPastList([]);
+        setActiveListId(null);
+        setListIds([]);
         return;
       }
 
-      const itemsRef = collection(db, "users", user.uid, "shopping_items");
-      const currentQuery = query(
-        itemsRef,
-        where("deleted", "==", false),
-        where("status", "==", "current"),
-      );
-      const pastQuery = query(
-        itemsRef,
-        where("deleted", "==", false),
-        where("status", "==", "past"),
-      );
+      const userRef = doc(db, "users", user.uid);
+      unsubUser = onSnapshot(userRef, (snap) => {
+        if (!snap.exists()) {
+          setListIds([]);
+          setActiveListId(null);
+          setListNames({});
+          setNeedsListSetup(true);
+          return;
+        }
+        const data = snap.data() as {
+          activeListId?: string | null;
+          listIds?: string[];
+          listNames?: Record<string, string>;
+        };
+        const existingListIds = data.listIds ?? [];
+        if (!existingListIds.length) {
+          setListIds([]);
+          setActiveListId(null);
+          setListNames(data.listNames ?? {});
+          setNeedsListSetup(true);
+          return;
+        }
+        setListIds(existingListIds);
+        setActiveListId(data.activeListId ?? existingListIds[0] ?? null);
+        setListNames(data.listNames ?? {});
+        setNeedsListSetup(false);
+      });
+    });
 
-      unsubCurrent = onSnapshot(
-        currentQuery,
-        (snap) => {
-          if (!snap) return;
-          const next = snap.docs.map(
-            (docSnap: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
-              const data = docSnap.data() as {
-                label: string;
-                iconKey: string;
-                updatedAt?: FirebaseFirestoreTypes.Timestamp | null;
-              };
-              return {
-                item: toItem(docSnap.id, data.iconKey, data.label),
-                updatedAt: data.updatedAt?.toMillis?.() ?? 0,
-              };
-            },
-          );
-          setCurrentList((prev) => {
-            const prevIndex = new Map(prev.map((item, idx) => [item.id, idx]));
+    return () => {
+      unsubAuth();
+      if (unsubUser) unsubUser();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeUid || !activeListId) return;
+    const itemsRef = getItemsCollectionRef(activeUid);
+    const currentQuery = query(
+      itemsRef,
+      where("deleted", "==", false),
+      where("status", "==", "current"),
+    );
+    const pastQuery = query(
+      itemsRef,
+      where("deleted", "==", false),
+      where("status", "==", "past"),
+    );
+
+    const unsubCurrent = onSnapshot(
+      currentQuery,
+      (snap) => {
+        if (!snap) return;
+        const next = snap.docs.map(
+          (docSnap: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+            const data = docSnap.data() as {
+              label: string;
+              iconKey: string;
+              updatedAt?: FirebaseFirestoreTypes.Timestamp | null;
+            };
+            return {
+              item: toItem(docSnap.id, data.iconKey, data.label),
+              updatedAt: data.updatedAt?.toMillis?.() ?? 0,
+            };
+          },
+        );
+        setCurrentList((prev) => {
+          const prevIndex = new Map(prev.map((item, idx) => [item.id, idx]));
             const ordered = next
               .slice()
               .sort(
@@ -209,71 +283,114 @@ export default function ShoppingListManager() {
                   a: { item: Item; updatedAt: number },
                   b: { item: Item; updatedAt: number },
                 ) => {
-                  const readdedA = recentlyReaddedRef.current.has(a.item.id);
-                  const readdedB = recentlyReaddedRef.current.has(b.item.id);
-                  if (readdedA && !readdedB) return -1;
-                  if (readdedB && !readdedA) return 1;
-                  const indexA = prevIndex.get(a.item.id);
-                  const indexB = prevIndex.get(b.item.id);
-                  if (indexA !== undefined && indexB !== undefined) {
-                    return indexA - indexB;
-                  }
-                  if (indexA !== undefined) return -1;
-                  if (indexB !== undefined) return 1;
-                  return b.updatedAt - a.updatedAt;
-                },
+                const readdedA = recentlyReaddedRef.current.has(a.item.id);
+                const readdedB = recentlyReaddedRef.current.has(b.item.id);
+                if (readdedA && !readdedB) return -1;
+                if (readdedB && !readdedA) return 1;
+                const indexA = prevIndex.get(a.item.id);
+                const indexB = prevIndex.get(b.item.id);
+                if (indexA !== undefined && indexB !== undefined) {
+                  return indexA - indexB;
+                }
+                if (indexA !== undefined) return -1;
+                if (indexB !== undefined) return 1;
+                return b.updatedAt - a.updatedAt;
+              },
               )
-              .map((entry) => entry.item);
-            for (const entry of ordered) {
-              if (recentlyReaddedRef.current.has(entry.id)) {
-                recentlyReaddedRef.current.delete(entry.id);
-              }
+              .map((entry: { item: Item; updatedAt: number }) => entry.item);
+          for (const entry of ordered) {
+            if (recentlyReaddedRef.current.has(entry.id)) {
+              recentlyReaddedRef.current.delete(entry.id);
             }
-            return ordered;
-          });
-        },
-        (error) => {
-          setNotice(`Current list error: ${error.message}`);
-        },
-      );
+          }
+          return ordered;
+        });
+      },
+      (error) => {
+        setNotice(`Current list error: ${error.message}`);
+      },
+    );
 
-      unsubPast = onSnapshot(
-        pastQuery,
-        (snap) => {
-          if (!snap) return;
-          const next = snap.docs
-            .map((docSnap: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
-              const data = docSnap.data() as {
-                label: string;
-                iconKey: string;
-                lastUsedAt?: FirebaseFirestoreTypes.Timestamp | null;
-              };
-              return {
-                item: toItem(docSnap.id, data.iconKey, data.label),
-                lastUsedAt: data.lastUsedAt?.toMillis?.() ?? 0,
-              };
-            })
-            .sort(
-              (
-                a: { item: Item; lastUsedAt: number },
-                b: { item: Item; lastUsedAt: number },
-              ) => b.lastUsedAt - a.lastUsedAt,
-            )
-            .map((entry: { item: Item; lastUsedAt: number }) => entry.item);
-          setPastList(next);
-        },
-        (error) => {
-          setNotice(`Past list error: ${error.message}`);
-        },
-      );
-    });
+    const unsubPast = onSnapshot(
+      pastQuery,
+      (snap) => {
+        if (!snap) return;
+        const next = snap.docs
+          .map((docSnap: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+            const data = docSnap.data() as {
+              label: string;
+              iconKey: string;
+              lastUsedAt?: FirebaseFirestoreTypes.Timestamp | null;
+            };
+            return {
+              item: toItem(docSnap.id, data.iconKey, data.label),
+              lastUsedAt: data.lastUsedAt?.toMillis?.() ?? 0,
+            };
+          })
+          .sort(
+            (
+              a: { item: Item; lastUsedAt: number },
+              b: { item: Item; lastUsedAt: number },
+            ) => b.lastUsedAt - a.lastUsedAt,
+          )
+          .map((entry: { item: Item; lastUsedAt: number }) => entry.item);
+        setPastList(next);
+      },
+      (error) => {
+        setNotice(`Past list error: ${error.message}`);
+      },
+    );
 
     return () => {
-      unsubAuth();
-      if (unsubCurrent) unsubCurrent();
-      if (unsubPast) unsubPast();
+      unsubCurrent();
+      unsubPast();
     };
-  }, []);
+  }, [activeUid, getItemsCollectionRef]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function hydrateSharedNames() {
+      if (!activeUid || !listIds.length) return;
+      const sharedIds = listIds.filter((id) => !id.startsWith("user:"));
+      if (!sharedIds.length) return;
+      const results = await Promise.all(
+        sharedIds.map(async (id) => {
+          const snap = await getDoc(doc(db, "lists", id));
+          const data = snap.data() as { name?: string } | undefined;
+          return { id, name: data?.name };
+        }),
+      );
+      if (cancelled) return;
+      const nextNames: Record<string, string> = {};
+      for (const entry of results) {
+        if (entry.name) nextNames[entry.id] = entry.name;
+      }
+      if (Object.keys(nextNames).length) {
+        setListNames((prev) => ({ ...prev, ...nextNames }));
+      }
+    }
+    void hydrateSharedNames();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeUid, listIds]);
+
+  useEffect(() => {
+    if (!activeListId) return;
+    const existingName = listNames[activeListId] ?? "";
+    setListNameInput(existingName);
+  }, [activeListId, listNames]);
+
+  useEffect(() => {
+    if (!copyHint) return;
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => {
+      setCopyHint(null);
+    }, 1400);
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, [copyHint]);
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -296,6 +413,155 @@ export default function ShoppingListManager() {
     return () => loop.stop();
   }, [bounceAnim]);
 
+  function generateInviteCode(length = 6) {
+    const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    let code = "";
+    for (let i = 0; i < length; i += 1) {
+      code += alphabet[Math.floor(Math.random() * alphabet.length)];
+    }
+    return code;
+  }
+
+  async function createSharedList() {
+    const user = auth.currentUser;
+    if (!user) return;
+    const userRef = doc(db, "users", user.uid);
+
+    let code = "";
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      code = generateInviteCode(6);
+      const listRef = doc(db, "lists", code);
+      const existing = await getDoc(listRef);
+      if (!existing.exists()) {
+        const initialName = listNameInput.trim() || "Shared List";
+        await setDoc(
+          listRef,
+          {
+            code,
+            createdBy: user.uid,
+            createdAt: serverTimestamp(),
+            shared: true,
+            name: initialName,
+          },
+          { merge: true },
+        );
+        await setDoc(
+          userRef,
+          {
+            activeListId: code,
+            listIds: arrayUnion(code),
+            listNames: { [code]: initialName },
+          },
+          { merge: true },
+        );
+        setListNameInput("");
+        setNotice(null);
+        return;
+      }
+    }
+    setNotice("Could not create a unique invite code. Try again.");
+  }
+
+  async function joinSharedList(rawCode: string) {
+    const user = auth.currentUser;
+    if (!user) return;
+    const normalized = rawCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (!normalized) {
+      setNotice("Enter a valid invite code.");
+      return;
+    }
+    const listRef = doc(db, "lists", normalized);
+    const snap = await getDoc(listRef);
+    if (!snap.exists()) {
+      setNotice("Invite code not found.");
+      return;
+    }
+    const userRef = doc(db, "users", user.uid);
+    await setDoc(
+      userRef,
+      { activeListId: normalized, listIds: arrayUnion(normalized) },
+      { merge: true },
+    );
+    const listData = snap.data() as { name?: string };
+    if (listData?.name) {
+      await setDoc(
+        userRef,
+        { listNames: { [normalized]: listData.name } },
+        { merge: true },
+      );
+    }
+    setShareCodeInput("");
+    setNotice(null);
+  }
+
+  async function leaveSharedList() {
+    const user = auth.currentUser;
+    if (!user || !activeListId) return;
+    const userRef = doc(db, "users", user.uid);
+    const fallback =
+      listIds.find((id) => id !== activeListId) ?? `user:${user.uid}`;
+    await setDoc(
+      userRef,
+      {
+        activeListId: fallback,
+        listIds: arrayRemove(activeListId),
+      },
+      { merge: true },
+    );
+    setNotice(null);
+  }
+
+  async function setActiveList(nextId: string) {
+    const user = auth.currentUser;
+    if (!user || !nextId) return;
+    const userRef = doc(db, "users", user.uid);
+    await setDoc(userRef, { activeListId: nextId }, { merge: true });
+  }
+
+  async function createPersonalList() {
+    const user = auth.currentUser;
+    if (!user) return;
+    const userRef = doc(db, "users", user.uid);
+    const personalId = `user:${user.uid}`;
+    const name = listNameInput.trim() || "My List";
+    await setDoc(
+      userRef,
+      {
+        activeListId: personalId,
+        listIds: arrayUnion(personalId),
+        listNames: { [personalId]: name },
+      },
+      { merge: true },
+    );
+    setListNameInput("");
+    setNotice(null);
+  }
+
+  async function renameActiveList(nextName: string) {
+    const user = auth.currentUser;
+    if (!user || !activeListId) return;
+    const name = nextName.trim();
+    if (!name) return;
+    if (activeListId.startsWith("user:")) {
+      const userRef = doc(db, "users", user.uid);
+      await setDoc(
+        userRef,
+        { listNames: { [activeListId]: name } },
+        { merge: true },
+      );
+    } else {
+      const listRef = doc(db, "lists", activeListId);
+      await setDoc(listRef, { name }, { merge: true });
+      const userRef = doc(db, "users", user.uid);
+      await setDoc(
+        userRef,
+        { listNames: { [activeListId]: name } },
+        { merge: true },
+      );
+    }
+    setNotice(null);
+  }
+
   async function addToCurrent(match: Match, inputLabel?: string) {
     const item: Item = {
       id: normalizeLabel(inputLabel?.trim() || match.key),
@@ -312,7 +578,8 @@ export default function ShoppingListManager() {
     const user = auth.currentUser;
     if (!user) return;
 
-    const itemRef = doc(db, "users", user.uid, "shopping_items", item.id);
+    const itemsRef = getItemsCollectionRef(user.uid);
+    const itemRef = doc(itemsRef, item.id);
     await setDoc(
       itemRef,
       {
@@ -339,7 +606,8 @@ export default function ShoppingListManager() {
     recentlyReaddedRef.current.add(item.id);
     const user = auth.currentUser;
     if (!user) return;
-    const itemRef = doc(db, "users", user.uid, "shopping_items", item.id);
+    const itemsRef = getItemsCollectionRef(user.uid);
+    const itemRef = doc(itemsRef, item.id);
     await updateDoc(itemRef, {
       status: "current",
       deleted: false,
@@ -356,7 +624,8 @@ export default function ShoppingListManager() {
     const { base } = parseQuantity(item.label);
     const user = auth.currentUser;
     if (!user) return;
-    const itemRef = doc(db, "users", user.uid, "shopping_items", item.id);
+    const itemsRef = getItemsCollectionRef(user.uid);
+    const itemRef = doc(itemsRef, item.id);
     await updateDoc(itemRef, {
       status: "past",
       label: base || item.label,
@@ -383,7 +652,8 @@ export default function ShoppingListManager() {
     if (newLabel === item.label) return;
     const user = auth.currentUser;
     if (!user) return;
-    const itemRef = doc(db, "users", user.uid, "shopping_items", item.id);
+    const itemsRef = getItemsCollectionRef(user.uid);
+    const itemRef = doc(itemsRef, item.id);
     await updateDoc(itemRef, {
       label: newLabel,
       updatedAt: serverTimestamp(),
@@ -555,9 +825,26 @@ export default function ShoppingListManager() {
       >
         <View style={styles.listSection}>
           <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: c.text }]}>
-              Groceries List
-            </Text>
+            <View style={styles.sectionTitleRow}>
+              <Text style={[styles.sectionTitle, { color: c.text }]}>
+                {activeListId ? getListLabel(activeListId) : "Your Lists"}
+              </Text>
+              <Pressable
+                onPress={() => setSettingsOpen(true)}
+                style={({ pressed }) => [
+                  styles.settingsButton,
+                  pressed && { opacity: 0.7 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="List settings"
+              >
+                <MaterialCommunityIcons
+                  name="cog-outline"
+                  size={16}
+                  color={sectionMetaColor}
+                />
+              </Pressable>
+            </View>
             <Text style={[styles.sectionMeta, { color: sectionMetaColor }]}>
               Swipe right if bought
             </Text>
@@ -580,13 +867,8 @@ export default function ShoppingListManager() {
                   onDelete: async (i) => {
                     const user = auth.currentUser;
                     if (!user) return;
-                    const itemRef = doc(
-                      db,
-                      "users",
-                      user.uid,
-                      "shopping_items",
-                      i.id,
-                    );
+                    const itemsRef = getItemsCollectionRef(user.uid);
+                    const itemRef = doc(itemsRef, i.id);
                     await updateDoc(itemRef, {
                       deleted: true,
                       updatedAt: serverTimestamp(),
@@ -681,13 +963,8 @@ export default function ShoppingListManager() {
                   onDelete: async (i) => {
                     const user = auth.currentUser;
                     if (!user) return;
-                    const itemRef = doc(
-                      db,
-                      "users",
-                      user.uid,
-                      "shopping_items",
-                      i.id,
-                    );
+                    const itemsRef = getItemsCollectionRef(user.uid);
+                    const itemRef = doc(itemsRef, i.id);
                     await updateDoc(itemRef, {
                       deleted: true,
                       updatedAt: serverTimestamp(),
@@ -796,23 +1073,418 @@ export default function ShoppingListManager() {
                 Not signed in. Lists won’t load.
               </Text>
             ) : null}
-          <FoodIconSearch
-            onSubmit={addToCurrent}
-            showPreview={false}
-            variant={isDark ? "dark" : "light"}
-            onFocus={() => {
-              const height = lastKeyboardHeight.current || defaultKeyboardHeight;
-              setKeyboardOffset(height);
-              animateKeyboard(height, Platform.OS === "android" ? 140 : 180);
-            }}
-            onBlur={() => {
-              setKeyboardOffset(0);
-              animateKeyboard(0, Platform.OS === "android" ? 160 : 200);
-            }}
-          />
+            <FoodIconSearch
+              onSubmit={addToCurrent}
+              showPreview={false}
+              variant={isDark ? "dark" : "light"}
+              onFocus={() => {
+                const height = lastKeyboardHeight.current || defaultKeyboardHeight;
+                setKeyboardOffset(height);
+                animateKeyboard(height, Platform.OS === "android" ? 140 : 180);
+              }}
+              onBlur={() => {
+                setKeyboardOffset(0);
+                animateKeyboard(0, Platform.OS === "android" ? 160 : 200);
+              }}
+            />
           </View>
         </Animated.View>
       </View>
+
+      <Modal
+        transparent
+        visible={settingsOpen}
+        animationType="fade"
+        onRequestClose={() => setSettingsOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable
+            style={styles.modalBackdropPress}
+            onPress={() => setSettingsOpen(false)}
+          />
+          <View
+            style={[
+              styles.modalCard,
+              { backgroundColor: surfaceCard, borderColor: surfaceBorder },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: c.text }]}>
+                List settings
+              </Text>
+              <Pressable
+                onPress={() => setSettingsOpen(false)}
+                style={({ pressed }) => [
+                  styles.modalClose,
+                  pressed && { opacity: 0.7 },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="close"
+                  size={16}
+                  color={sectionMetaColor}
+                />
+              </Pressable>
+            </View>
+
+            <View
+              style={[
+                styles.listPickerCard,
+                {
+                  borderColor: surfaceBorder,
+                  backgroundColor: isDark
+                    ? "rgba(255,255,255,0.03)"
+                    : "rgba(0,0,0,0.04)",
+                },
+              ]}
+            >
+              <Text style={[styles.shareTitle, { color: c.text }]}>
+                Your lists
+              </Text>
+              <View style={styles.listPickerWrap}>
+                {listIds.map((id) => {
+                  const isActive = id === activeListId;
+                  return (
+                    <Pressable
+                      key={id}
+                      onPress={() => setActiveList(id)}
+                      style={({ pressed }) => [
+                        styles.listPill,
+                        {
+                          borderColor: isActive ? c.olive : surfaceBorder,
+                          backgroundColor: isActive
+                            ? "rgba(163,177,138,0.22)"
+                            : "transparent",
+                        },
+                        pressed && { opacity: 0.7 },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.listPillText,
+                          { color: isActive ? c.text : sectionMetaColor },
+                        ]}
+                      >
+                        {getListLabel(id)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            {activeListId ? (
+              <View
+                style={[
+                  styles.renameCard,
+                  {
+                    borderColor: surfaceBorder,
+                    backgroundColor: isDark
+                      ? "rgba(255,255,255,0.03)"
+                      : "rgba(0,0,0,0.04)",
+                  },
+                ]}
+              >
+                <Text style={[styles.shareTitle, { color: c.text }]}>
+                  List name
+                </Text>
+                <View style={styles.renameRow}>
+                  <TextInput
+                    value={listNameInput}
+                    onChangeText={setListNameInput}
+                    placeholder="List name"
+                    placeholderTextColor={sectionMetaColor}
+                    autoCorrect={false}
+                    maxLength={32}
+                    style={[
+                      styles.shareInput,
+                      {
+                        color: c.text,
+                        borderColor: surfaceBorder,
+                      },
+                    ]}
+                  />
+                  <Pressable
+                    onPress={() => renameActiveList(listNameInput)}
+                    disabled={!activeUid || !activeListId}
+                    style={({ pressed }) => [
+                      styles.shareButtonSmall,
+                      { borderColor: surfaceBorder },
+                      pressed && { opacity: 0.7 },
+                      (!activeUid || !activeListId) && { opacity: 0.5 },
+                    ]}
+                  >
+                    <Text style={[styles.shareButtonText, { color: c.text }]}>
+                      Save
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
+
+            <View
+              style={[
+                styles.shareCard,
+                {
+                  borderColor: surfaceBorder,
+                  backgroundColor: isDark
+                    ? "rgba(255,255,255,0.04)"
+                    : "rgba(0,0,0,0.05)",
+                },
+              ]}
+            >
+              <View style={styles.shareHeaderRow}>
+                <Text style={[styles.shareTitle, { color: c.text }]}>
+                  Sharing
+                </Text>
+                <Text style={[styles.shareMeta, { color: sectionMetaColor }]}>
+                  {isSharedList ? "On" : "Off"}
+                </Text>
+              </View>
+              {isSharedList && activeListId ? (
+                <>
+                  <Pressable
+                    onPress={async () => {
+                      await Clipboard.setStringAsync(activeListId);
+                      setCopyHint("code");
+                    }}
+                    style={({ pressed }) => [
+                      styles.shareLinkRow,
+                      { borderColor: surfaceBorder },
+                      pressed && { opacity: 0.7 },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.shareLinkText,
+                        { color: subtitleColor },
+                      ]}
+                    >
+                      Invite code: {activeListId}
+                    </Text>
+                    <MaterialCommunityIcons
+                      name="content-copy"
+                      size={14}
+                      color={sectionMetaColor}
+                    />
+                  </Pressable>
+                  <Pressable
+                    onPress={async () => {
+                      if (!shareLink) return;
+                      await Clipboard.setStringAsync(shareLink);
+                      setCopyHint("link");
+                    }}
+                    style={({ pressed }) => [
+                      styles.shareLinkRow,
+                      { borderColor: surfaceBorder },
+                      pressed && { opacity: 0.7 },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.shareLinkText,
+                        { color: subtitleColor },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      Invite link: {shareLink}
+                    </Text>
+                    <MaterialCommunityIcons
+                      name="content-copy"
+                      size={14}
+                      color={sectionMetaColor}
+                    />
+                  </Pressable>
+                  {copyHint ? (
+                    <Text style={[styles.copyHint, { color: sectionMetaColor }]}>
+                      {copyHint === "code" ? "Code copied" : "Link copied"}
+                    </Text>
+                  ) : null}
+                  <Pressable
+                    onPress={leaveSharedList}
+                    disabled={!activeUid || !activeListId}
+                    style={({ pressed }) => [
+                      styles.shareButton,
+                      { borderColor: surfaceBorder },
+                      pressed && { opacity: 0.7 },
+                      (!activeUid || !activeListId) && { opacity: 0.5 },
+                    ]}
+                  >
+                    <Text style={[styles.shareButtonText, { color: c.text }]}>
+                      Leave shared list
+                    </Text>
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <View style={styles.shareJoinRow}>
+                    <TextInput
+                      value={shareCodeInput}
+                      onChangeText={setShareCodeInput}
+                      placeholder="Invite code"
+                      placeholderTextColor={sectionMetaColor}
+                      autoCapitalize="characters"
+                      autoCorrect={false}
+                      maxLength={10}
+                      style={[
+                        styles.shareInput,
+                        {
+                          color: c.text,
+                          borderColor: surfaceBorder,
+                        },
+                      ]}
+                    />
+                    <Pressable
+                      onPress={() => joinSharedList(shareCodeInput)}
+                      disabled={!activeUid}
+                      style={({ pressed }) => [
+                        styles.shareButtonSmall,
+                        { borderColor: surfaceBorder },
+                        pressed && { opacity: 0.7 },
+                        !activeUid && { opacity: 0.5 },
+                      ]}
+                    >
+                      <Text style={[styles.shareButtonText, { color: c.text }]}>
+                        Join
+                      </Text>
+                    </Pressable>
+                  </View>
+                  <Pressable
+                    onPress={createSharedList}
+                    disabled={!activeUid}
+                    style={({ pressed }) => [
+                      styles.shareButton,
+                      { borderColor: surfaceBorder },
+                      pressed && { opacity: 0.7 },
+                      !activeUid && { opacity: 0.5 },
+                    ]}
+                  >
+                    <Text style={[styles.shareButtonText, { color: c.text }]}>
+                      Create invite
+                    </Text>
+                  </Pressable>
+                </>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        visible={needsListSetup}
+        animationType="fade"
+        onRequestClose={() => null}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalCard,
+              { backgroundColor: surfaceCard, borderColor: surfaceBorder },
+            ]}
+          >
+            <Text style={[styles.modalTitle, { color: c.text }]}>
+              Create or join a list
+            </Text>
+            <Text style={[styles.shareLine, { color: subtitleColor }]}>
+              You need a list before you can add items.
+            </Text>
+
+            <View
+              style={[
+                styles.renameCard,
+                {
+                  borderColor: surfaceBorder,
+                  backgroundColor: isDark
+                    ? "rgba(255,255,255,0.03)"
+                    : "rgba(0,0,0,0.04)",
+                },
+              ]}
+            >
+              <Text style={[styles.shareTitle, { color: c.text }]}>
+                New list name
+              </Text>
+              <TextInput
+                value={listNameInput}
+                onChangeText={setListNameInput}
+                placeholder="My List"
+                placeholderTextColor={sectionMetaColor}
+                autoCorrect={false}
+                maxLength={32}
+                style={[
+                  styles.shareInput,
+                  {
+                    color: c.text,
+                    borderColor: surfaceBorder,
+                  },
+                ]}
+              />
+              <Pressable
+                onPress={createPersonalList}
+                disabled={!activeUid}
+                style={({ pressed }) => [
+                  styles.shareButton,
+                  { borderColor: surfaceBorder },
+                  pressed && { opacity: 0.7 },
+                  !activeUid && { opacity: 0.5 },
+                ]}
+              >
+                <Text style={[styles.shareButtonText, { color: c.text }]}>
+                  Create list
+                </Text>
+              </Pressable>
+            </View>
+
+            <View
+              style={[
+                styles.renameCard,
+                {
+                  borderColor: surfaceBorder,
+                  backgroundColor: isDark
+                    ? "rgba(255,255,255,0.03)"
+                    : "rgba(0,0,0,0.04)",
+                },
+              ]}
+            >
+              <Text style={[styles.shareTitle, { color: c.text }]}>
+                Join with code
+              </Text>
+              <View style={styles.shareJoinRow}>
+                <TextInput
+                  value={shareCodeInput}
+                  onChangeText={setShareCodeInput}
+                  placeholder="Invite code"
+                  placeholderTextColor={sectionMetaColor}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  maxLength={10}
+                  style={[
+                    styles.shareInput,
+                    {
+                      color: c.text,
+                      borderColor: surfaceBorder,
+                    },
+                  ]}
+                />
+                <Pressable
+                  onPress={() => joinSharedList(shareCodeInput)}
+                  disabled={!activeUid}
+                  style={({ pressed }) => [
+                    styles.shareButtonSmall,
+                    { borderColor: surfaceBorder },
+                    pressed && { opacity: 0.7 },
+                    !activeUid && { opacity: 0.5 },
+                  ]}
+                >
+                  <Text style={[styles.shareButtonText, { color: c.text }]}>
+                    Join
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -898,6 +1570,14 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 6,
   },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  settingsButton: {
+    padding: 4,
+  },
   sectionTitle: {
     fontSize: 17,
     fontFamily: "Montserrat-SemiBold",
@@ -954,6 +1634,139 @@ const styles = StyleSheet.create({
     textAlign: "center",
     alignSelf: "center",
     width: "100%",
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    padding: 20,
+  },
+  modalBackdropPress: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalCard: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 16,
+    gap: 12,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontFamily: "Montserrat-SemiBold",
+  },
+  modalClose: {
+    padding: 4,
+  },
+  shareCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    gap: 10,
+  },
+  listPickerCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    gap: 10,
+  },
+  renameCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    gap: 10,
+  },
+  renameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  listPickerWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  listPill: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  listPillText: {
+    fontSize: 11,
+    fontFamily: "Montserrat-SemiBold",
+  },
+  shareHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  shareTitle: {
+    fontSize: 14,
+    fontFamily: "Montserrat-SemiBold",
+  },
+  shareMeta: {
+    fontSize: 11,
+    fontFamily: "Montserrat-Regular",
+  },
+  shareLine: {
+    fontSize: 12,
+    fontFamily: "Montserrat-Regular",
+  },
+  shareLinkRow: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  shareLinkText: {
+    fontSize: 12,
+    fontFamily: "Montserrat-Medium",
+    flex: 1,
+  },
+  copyHint: {
+    fontSize: 11,
+    fontFamily: "Montserrat-SemiBold",
+    textAlign: "right",
+  },
+  shareJoinRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  shareInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+    fontFamily: "Montserrat-Medium",
+  },
+  shareButton: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 8,
+    alignItems: "center",
+  },
+  shareButtonSmall: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: "center",
+  },
+  shareButtonText: {
+    fontSize: 12,
+    fontFamily: "Montserrat-SemiBold",
   },
   row: {
     flexDirection: "row",
