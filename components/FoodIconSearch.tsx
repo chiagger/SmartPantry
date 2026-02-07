@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Image, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { useTheme } from "@/context/ThemeContext";
 import { FOOD_ICON_ALIASES } from "@/utils/foodIconAliases";
@@ -181,6 +181,8 @@ export default function FoodIconSearch({
   const { colors: c } = useTheme();
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
+  const [quantity, setQuantity] = useState(1);
+  const [isFocused, setIsFocused] = useState(false);
   const inputTheme =
     variant === "green"
       ? {
@@ -204,6 +206,22 @@ export default function FoodIconSearch({
           };
 
   const match = useMemo(() => findBestMatch(submittedQuery), [submittedQuery]);
+  const isLight = variant === "light";
+  const qtyTheme = {
+    backgroundColor: isLight ? "#ffffff" : "rgba(0,0,0,0.25)",
+    borderColor: isLight ? "rgba(88,129,87,0.6)" : "rgba(255,255,255,0.2)",
+    textColor: isLight ? "rgba(43,45,45,0.9)" : "rgba(237,237,231,0.9)",
+  };
+  const handleSubmit = () => {
+    if (!onSubmit) return;
+    const baseLabel = query.trim();
+    if (!baseLabel) return;
+    const nextLabel = quantity > 1 ? `${baseLabel} x${quantity}` : baseLabel;
+    setSubmittedQuery(baseLabel);
+    onSubmit(findBestMatch(baseLabel), nextLabel);
+    setQuery("");
+    setQuantity(1);
+  };
 
   return (
     <View style={styles.container}>
@@ -221,11 +239,10 @@ export default function FoodIconSearch({
           placeholderTextColor={inputTheme.placeholder}
           value={query}
           onChangeText={setQuery}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
           onSubmitEditing={() => {
-            const next = query.trim();
-            setSubmittedQuery(next);
-            if (onSubmit) onSubmit(findBestMatch(next), next);
-            setQuery("");
+            handleSubmit();
           }}
           underlineColorAndroid="transparent"
           style={[styles.inputText, { color: inputTheme.textColor }]}
@@ -235,6 +252,43 @@ export default function FoodIconSearch({
           returnKeyType="search"
         />
       </View>
+      {isFocused ? (
+        <View style={styles.qtyControlRow}>
+          <Pressable
+            onPress={() => setQuantity((q) => Math.max(1, q - 1))}
+            style={({ pressed }) => [
+              styles.qtyButton,
+              {
+                borderColor: qtyTheme.borderColor,
+                backgroundColor: qtyTheme.backgroundColor,
+              },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Text style={[styles.qtyButtonText, { color: qtyTheme.textColor }]}>
+              -
+            </Text>
+          </Pressable>
+          <Text style={[styles.qtyValue, { color: qtyTheme.textColor }]}>
+            {quantity}
+          </Text>
+          <Pressable
+            onPress={() => setQuantity((q) => Math.min(20, q + 1))}
+            style={({ pressed }) => [
+              styles.qtyButton,
+              {
+                borderColor: qtyTheme.borderColor,
+                backgroundColor: qtyTheme.backgroundColor,
+              },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Text style={[styles.qtyButtonText, { color: qtyTheme.textColor }]}>
+              +
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
       {showPreview ? (
         <>
           <Image source={match.source} style={styles.icon} />
@@ -263,6 +317,31 @@ const styles = StyleSheet.create({
     fontSize: 16,
     paddingHorizontal: 14,
     paddingVertical: 12,
+  },
+  qtyControlRow: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  qtyButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  qtyButtonText: {
+    fontSize: 18,
+    fontFamily: "Montserrat-Medium",
+  },
+  qtyValue: {
+    fontSize: 14,
+    fontFamily: "Montserrat-SemiBold",
+    minWidth: 22,
+    textAlign: "center",
   },
   icon: {
     width: 96,

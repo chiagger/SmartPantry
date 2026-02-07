@@ -79,6 +79,7 @@ export default function ShoppingListManager() {
     ? "rgba(255,255,255,0.15)"
     : "rgba(0,0,0,0.08)";
   const scrollTextColor = isDark ? "rgba(255,255,255,0.8)" : "rgba(0,0,0,0.6)";
+  const maxQuickQty = 20;
 
   const currentListRef = useRef<FlatList<Item> | null>(null);
   const [currentList, setCurrentList] = useState<Item[]>([]);
@@ -311,6 +312,31 @@ export default function ShoppingListManager() {
     });
   }
 
+  function parseQuantity(label: string) {
+    const trimmed = label.trim();
+    const match = trimmed.match(/\s+x(\d+)$/i);
+    if (!match) {
+      return { base: trimmed, qty: 1 };
+    }
+    const qty = Math.max(1, Number(match[1] ?? 1));
+    const base = trimmed.replace(/\s+x\d+$/i, "").trim();
+    return { base, qty };
+  }
+
+  async function updateQuantity(item: Item, nextQty: number) {
+    const { base } = parseQuantity(item.label);
+    if (!base) return;
+    const newLabel = nextQty > 1 ? `${base} x${nextQty}` : base;
+    if (newLabel === item.label) return;
+    const user = auth.currentUser;
+    if (!user) return;
+    const itemRef = doc(db, "users", user.uid, "shopping_items", item.id);
+    await updateDoc(itemRef, {
+      label: newLabel,
+      updatedAt: serverTimestamp(),
+    });
+  }
+
   function renderItem({
     item,
     onPress,
@@ -322,6 +348,7 @@ export default function ShoppingListManager() {
     onDelete?: (i: Item) => void;
     dimmed?: boolean;
   }) {
+    const { qty, base } = parseQuantity(item.label);
     const rowContent = (
       <View
         style={[
@@ -341,9 +368,81 @@ export default function ShoppingListManager() {
               { color: dimmed ? dimmedTextColor : c.text },
             ]}
           >
-            {item.label}
+            {base}
           </Text>
         </Pressable>
+        <View style={styles.qtyControlRow}>
+          <Pressable
+            onPress={() => updateQuantity(item, Math.max(1, qty - 1))}
+            style={({ pressed }) => [
+              styles.qtyButton,
+              {
+                borderColor: isDark
+                  ? "rgba(255,255,255,0.2)"
+                  : "rgba(0,0,0,0.2)",
+                backgroundColor: isDark
+                  ? "rgba(163,177,138,0.18)"
+                  : "rgba(163,177,138,0.16)",
+              },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Text
+              style={[
+                styles.qtyButtonText,
+                {
+                  color: isDark
+                    ? "rgba(237,237,231,0.9)"
+                    : "rgba(43,45,45,0.85)",
+                },
+              ]}
+            >
+              -
+            </Text>
+          </Pressable>
+          <Text
+            style={[
+              styles.qtyValue,
+              {
+                color: isDark
+                  ? "rgba(237,237,231,0.9)"
+                  : "rgba(43,45,45,0.85)",
+              },
+            ]}
+          >
+            {qty}
+          </Text>
+          <Pressable
+            onPress={() =>
+              updateQuantity(item, qty >= maxQuickQty ? 1 : qty + 1)
+            }
+            style={({ pressed }) => [
+              styles.qtyButton,
+              {
+                borderColor: isDark
+                  ? "rgba(255,255,255,0.2)"
+                  : "rgba(0,0,0,0.2)",
+                backgroundColor: isDark
+                  ? "rgba(163,177,138,0.18)"
+                  : "rgba(163,177,138,0.16)",
+              },
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Text
+              style={[
+                styles.qtyButtonText,
+                {
+                  color: isDark
+                    ? "rgba(237,237,231,0.9)"
+                    : "rgba(43,45,45,0.85)",
+                },
+              ]}
+            >
+              +
+            </Text>
+          </Pressable>
+        </View>
       </View>
     );
 
@@ -811,6 +910,30 @@ const styles = StyleSheet.create({
   rowText: {
     fontSize: 14,
     textTransform: "capitalize",
+  },
+  qtyControlRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginRight: 8,
+  },
+  qtyButton: {
+    width: 22,
+    height: 22,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  qtyButtonText: {
+    fontSize: 14,
+    fontFamily: "Montserrat-Medium",
+  },
+  qtyValue: {
+    fontSize: 12,
+    fontFamily: "Montserrat-SemiBold",
+    minWidth: 16,
+    textAlign: "center",
   },
   moveActionSpacer: {
     width: 72,
