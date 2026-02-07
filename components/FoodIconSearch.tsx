@@ -191,10 +191,10 @@ export default function FoodIconSearch({
         }
       : variant === "light"
         ? {
-            backgroundColor: "rgba(0,0,0,0.04)",
-            borderColor: "rgba(0,0,0,0.15)",
+            backgroundColor: "#FFFFFF",
+            borderColor: "rgba(88,129,87,0.55)",
             textColor: c.text,
-            placeholder: "rgba(0,0,0,0.45)",
+            placeholder: "rgba(40,60,40,0.55)",
           }
         : {
             backgroundColor: "rgba(255,255,255,0.08)",
@@ -207,29 +207,34 @@ export default function FoodIconSearch({
 
   return (
     <View style={styles.container}>
-      <TextInput
-        placeholder="Search for a food item"
-        placeholderTextColor={inputTheme.placeholder}
-        value={query}
-        onChangeText={setQuery}
-        onSubmitEditing={() => {
-          const next = query.trim();
-          setSubmittedQuery(next);
-          if (onSubmit) onSubmit(findBestMatch(next), next);
-          setQuery("");
-        }}
+      <View
         style={[
-          styles.input,
+          styles.inputShell,
           {
-            color: inputTheme.textColor,
             borderColor: inputTheme.borderColor,
             backgroundColor: inputTheme.backgroundColor,
           },
         ]}
-        autoCapitalize="none"
-        autoCorrect={false}
-        returnKeyType="search"
-      />
+      >
+        <TextInput
+          placeholder="Search for a food item"
+          placeholderTextColor={inputTheme.placeholder}
+          value={query}
+          onChangeText={setQuery}
+          onSubmitEditing={() => {
+            const next = query.trim();
+            setSubmittedQuery(next);
+            if (onSubmit) onSubmit(findBestMatch(next), next);
+            setQuery("");
+          }}
+          underlineColorAndroid="transparent"
+          style={[styles.inputText, { color: inputTheme.textColor }]}
+          selectionColor={inputTheme.textColor}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+        />
+      </View>
       {showPreview ? (
         <>
           <Image source={match.source} style={styles.icon} />
@@ -247,16 +252,17 @@ const styles = StyleSheet.create({
     gap: 16,
     paddingHorizontal: 8,
   },
-  input: {
+  inputShell: {
     width: "100%",
     borderWidth: 1,
     borderRadius: 14,
+    minHeight: 50,
+    justifyContent: "center",
+  },
+  inputText: {
+    fontSize: 16,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    fontSize: 16,
-    minHeight: 50,
-    borderColor: "rgba(255,255,255,0.24)",
-    backgroundColor: "rgba(255,255,255,0.12)",
   },
   icon: {
     width: 96,

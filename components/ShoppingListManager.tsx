@@ -53,28 +53,21 @@ function normalizeLabel(input: string): string {
 export default function ShoppingListManager() {
   const { theme, colors: c } = useTheme();
   const isDark = theme === "dark";
-  const surfaceCard = isDark
-    ? "rgba(18,18,18,0.88)"
-    : "rgba(255,255,255,0.95)";
-  const surfaceHero = isDark
-    ? "rgba(16,16,16,0.92)"
-    : "rgba(255,255,255,0.98)";
+  const surfaceCard = isDark ? "rgba(18,18,18,0.88)" : "rgba(255,255,255,0.95)";
+  const surfaceHero = isDark ? "rgba(16,16,16,0.92)" : "rgba(255,255,255,0.98)";
   const surfaceRow = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)";
-  const surfaceBorder = isDark
-    ? "rgba(255,255,255,0.08)"
-    : "rgba(0,0,0,0.08)";
+  const surfaceBorder = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)";
+  const fadeColor = isDark ? "rgba(18,18,18,0.9)" : "rgba(255,255,255,0.95)";
+  const dimmedTextColor = isDark ? c.gray : "rgba(51,53,51,0.5)";
+  const dimmedOpacity = isDark ? 0.55 : 0.75;
   const subtitleColor = isDark
     ? "rgba(237,237,231,0.85)"
     : "rgba(51,53,51,0.7)";
-  const scrollPillBg = isDark
-    ? "rgba(0,0,0,0.65)"
-    : "rgba(255,255,255,0.85)";
+  const scrollPillBg = isDark ? "rgba(0,0,0,0.65)" : "rgba(255,255,255,0.85)";
   const scrollPillBorder = isDark
     ? "rgba(255,255,255,0.15)"
     : "rgba(0,0,0,0.08)";
-  const scrollTextColor = isDark
-    ? "rgba(255,255,255,0.8)"
-    : "rgba(0,0,0,0.6)";
+  const scrollTextColor = isDark ? "rgba(255,255,255,0.8)" : "rgba(0,0,0,0.6)";
 
   const currentListRef = useRef<FlatList<Item> | null>(null);
   const [currentList, setCurrentList] = useState<Item[]>([]);
@@ -99,6 +92,12 @@ export default function ShoppingListManager() {
   const keyboardOffsetAnim = useRef(new Animated.Value(0)).current;
   const tabBarHeight = Platform.OS === "android" ? 56 : 0;
   const keyboardLift = Math.max(0, keyboardOffset - tabBarHeight);
+  const keyboardVisible = keyboardOffset > 0;
+  const listDimOpacity = keyboardOffsetAnim.interpolate({
+    inputRange: [0, 200],
+    outputRange: [1, 0.35],
+    extrapolate: "clamp",
+  });
 
   useEffect(() => {
     const showEvent =
@@ -317,7 +316,7 @@ export default function ShoppingListManager() {
         style={[
           styles.row,
           { borderColor: c.card, backgroundColor: surfaceRow },
-          dimmed && styles.rowDimmed,
+          dimmed && { opacity: dimmedOpacity },
         ]}
       >
         <Pressable
@@ -325,7 +324,12 @@ export default function ShoppingListManager() {
           style={({ pressed }) => [styles.rowMain, pressed && { opacity: 0.7 }]}
         >
           <Image source={item.source} style={styles.rowIcon} />
-          <Text style={[styles.rowText, { color: dimmed ? c.gray : c.text }]}>
+          <Text
+            style={[
+              styles.rowText,
+              { color: dimmed ? dimmedTextColor : c.text },
+            ]}
+          >
             {item.label}
           </Text>
         </Pressable>
@@ -370,27 +374,15 @@ export default function ShoppingListManager() {
 
   return (
     <View style={styles.container}>
-      <AnimatedPressable
-        onPress={Keyboard.dismiss}
-        pointerEvents={keyboardOffset > 0 ? "auto" : "none"}
-        style={[
-          styles.keyboardDimmer,
-          {
-            opacity: keyboardOffsetAnim.interpolate({
-              inputRange: [0, 200],
-              outputRange: [0, 0.65],
-              extrapolate: "clamp",
-            }),
-          },
-        ]}
-      />
-      <View
+      <Animated.View
         style={[
           styles.listsWrapper,
           {
             paddingBottom: Math.max(searchDockHeight + keyboardLift + 12, 12),
+            opacity: listDimOpacity,
           },
         ]}
+        pointerEvents={keyboardVisible ? "none" : "auto"}
       >
         <View style={styles.listSection}>
           <View style={styles.sectionHeader}>
@@ -398,7 +390,7 @@ export default function ShoppingListManager() {
               Groceries List
             </Text>
             <Text style={[styles.sectionMeta, { color: c.text }]}>
-              Swipe right to move
+              Swipe right if bought
             </Text>
           </View>
           <View
@@ -446,8 +438,14 @@ export default function ShoppingListManager() {
                 setCurrentAtEnd(atEnd);
               }}
             />
-            <View pointerEvents="none" style={styles.fadeTop} />
-            <View pointerEvents="none" style={styles.fadeBottom} />
+            <View
+              pointerEvents="none"
+              style={[styles.fadeTop, { backgroundColor: fadeColor }]}
+            />
+            <View
+              pointerEvents="none"
+              style={[styles.fadeBottom, { backgroundColor: fadeColor }]}
+            />
             {currentList.length > 4 && !currentAtEnd ? (
               <Animated.View
                 pointerEvents="none"
@@ -475,7 +473,9 @@ export default function ShoppingListManager() {
                     size={16}
                     color={isDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.6)"}
                   />
-                  <Text style={[styles.scrollHintText, { color: scrollTextColor }]}>
+                  <Text
+                    style={[styles.scrollHintText, { color: scrollTextColor }]}
+                  >
                     Scroll
                   </Text>
                 </View>
@@ -538,8 +538,14 @@ export default function ShoppingListManager() {
                 setPastAtEnd(atEnd);
               }}
             />
-            <View pointerEvents="none" style={styles.fadeTop} />
-            <View pointerEvents="none" style={styles.fadeBottom} />
+            <View
+              pointerEvents="none"
+              style={[styles.fadeTop, { backgroundColor: fadeColor }]}
+            />
+            <View
+              pointerEvents="none"
+              style={[styles.fadeBottom, { backgroundColor: fadeColor }]}
+            />
             {pastList.length > 4 && !pastAtEnd ? (
               <Animated.View
                 pointerEvents="none"
@@ -567,7 +573,9 @@ export default function ShoppingListManager() {
                     size={16}
                     color={isDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.6)"}
                   />
-                  <Text style={[styles.scrollHintText, { color: scrollTextColor }]}>
+                  <Text
+                    style={[styles.scrollHintText, { color: scrollTextColor }]}
+                  >
                     Scroll
                   </Text>
                 </View>
@@ -575,46 +583,53 @@ export default function ShoppingListManager() {
             ) : null}
           </View>
         </View>
-      </View>
-
-      <Animated.View
-        style={[styles.searchDock, { bottom: keyboardOffsetAnim }]}
-      >
-        <View
-          style={[
-            styles.heroCard,
-            {
-              backgroundColor: surfaceHero,
-              borderColor: isDark ? c.olive : "rgba(88,129,87,0.35)",
-            },
-          ]}
-          onLayout={(e) => setSearchDockHeight(e.nativeEvent.layout.height)}
-        >
-          <Text style={[styles.cardTitle, { color: c.text }]}>
-            Build your list
-          </Text>
-          <Text
-            style={[styles.cardSubtitle, { color: subtitleColor }]}
-          >
-            Search and add items to your current list.
-          </Text>
-          {notice ? (
-            <Text style={[styles.notice, { color: "rgba(217,100,89,0.85)" }]}>
-              {notice}
-            </Text>
-          ) : null}
-          {!activeUid ? (
-            <Text style={[styles.notice, { color: "rgba(217,100,89,0.85)" }]}>
-              Not signed in. Lists won’t load.
-            </Text>
-          ) : null}
-          <FoodIconSearch
-            onSubmit={addToCurrent}
-            showPreview={false}
-            variant={isDark ? "dark" : "light"}
-          />
-        </View>
       </Animated.View>
+
+      {keyboardVisible ? (
+        <Pressable
+          style={styles.keyboardDismissOverlay}
+          onPress={Keyboard.dismiss}
+        />
+      ) : null}
+
+      <View style={styles.searchDockWrapper} pointerEvents="box-none">
+        <Animated.View style={[styles.searchDock, { bottom: keyboardOffsetAnim }]}>
+          <View
+            style={[
+              styles.heroCard,
+              {
+                backgroundColor: isDark ? surfaceHero : "rgba(163,177,138,0.18)",
+                borderColor: isDark ? c.olive : "rgba(88,129,87,0.6)",
+                shadowOpacity: isDark ? styles.heroCard.shadowOpacity : 0,
+                elevation: isDark ? styles.heroCard.elevation : 0,
+              },
+            ]}
+            onLayout={(e) => setSearchDockHeight(e.nativeEvent.layout.height)}
+          >
+            <Text style={[styles.cardTitle, { color: c.text }]}>
+              Build your list
+            </Text>
+            <Text style={[styles.cardSubtitle, { color: subtitleColor }]}>
+              Search and add items to your current list.
+            </Text>
+            {notice ? (
+              <Text style={[styles.notice, { color: "rgba(217,100,89,0.85)" }]}>
+                {notice}
+              </Text>
+            ) : null}
+            {!activeUid ? (
+              <Text style={[styles.notice, { color: "rgba(217,100,89,0.85)" }]}>
+                Not signed in. Lists won’t load.
+              </Text>
+            ) : null}
+            <FoodIconSearch
+              onSubmit={addToCurrent}
+              showPreview={false}
+              variant={isDark ? "dark" : "light"}
+            />
+          </View>
+        </Animated.View>
+      </View>
     </View>
   );
 }
@@ -625,12 +640,26 @@ const styles = StyleSheet.create({
     gap: 16,
     paddingHorizontal: 20,
     flex: 1,
+    position: "relative",
   },
   listsWrapper: {
     gap: 16,
     flex: 1,
     marginTop: "10%",
-    zIndex: 1,
+    position: "relative",
+  },
+  searchDockWrapper: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 20,
+    elevation: 20,
+  },
+  keyboardDismissOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+    elevation: 10,
   },
   searchDock: {
     position: "absolute",
@@ -639,14 +668,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 0,
-    zIndex: 3,
-  },
-  keyboardDimmer: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#000",
-    zIndex: 2,
-    top: -24,
-    bottom: -24,
   },
   heroCard: {
     backgroundColor: "rgba(16,16,16,0.92)",
@@ -715,7 +736,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 14,
-    backgroundColor: "rgba(18,18,18,0.9)",
   },
   fadeBottom: {
     position: "absolute",
@@ -723,7 +743,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 16,
-    backgroundColor: "rgba(18,18,18,0.9)",
   },
   scrollHintOverlay: {
     position: "absolute",
@@ -779,9 +798,6 @@ const styles = StyleSheet.create({
   rowText: {
     fontSize: 14,
     textTransform: "capitalize",
-  },
-  rowDimmed: {
-    opacity: 0.55,
   },
   moveActionSpacer: {
     width: 72,
