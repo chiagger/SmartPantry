@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -19,22 +19,24 @@ import { useTheme } from "@/context/ThemeContext";
 import { auth, db } from "@/firebaseConfig";
 import { FOOD_ICON_INDEX } from "@/utils/foodIconIndex";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as Clipboard from "expo-clipboard";
 import { onAuthStateChanged } from "@react-native-firebase/auth";
 import type { FirebaseFirestoreTypes } from "@react-native-firebase/firestore";
 import {
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  query,
   arrayRemove,
   arrayUnion,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  query,
   serverTimestamp,
   setDoc,
   updateDoc,
   where,
 } from "@react-native-firebase/firestore";
+import * as Clipboard from "expo-clipboard";
 import { Swipeable } from "react-native-gesture-handler";
 
 type Item = {
@@ -59,19 +61,11 @@ function normalizeLabel(input: string): string {
 export default function ShoppingListManager() {
   const { theme, colors: c } = useTheme();
   const isDark = theme === "dark";
-  const surfaceCard = isDark
-    ? "rgba(18,18,18,0.88)"
-    : "rgba(255,255,255,0.96)";
-  const surfaceHero = isDark
-    ? "rgba(16,16,16,0.92)"
-    : "rgba(255,255,255,0.98)";
+  const surfaceCard = isDark ? "rgba(18,18,18,0.88)" : "rgba(255,255,255,0.96)";
+  const surfaceHero = isDark ? "rgba(16,16,16,0.92)" : "rgba(255,255,255,0.98)";
   const surfaceRow = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)";
-  const surfaceBorder = isDark
-    ? "rgba(255,255,255,0.08)"
-    : "rgba(0,0,0,0.12)";
-  const fadeColor = isDark
-    ? "rgba(18,18,18,0.9)"
-    : "rgba(255,255,255,0.95)";
+  const surfaceBorder = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.12)";
+  const fadeColor = isDark ? "rgba(18,18,18,0.9)" : "rgba(255,255,255,0.95)";
   const dimmedTextColor = isDark ? c.gray : "rgba(43,45,45,0.65)";
   const dimmedOpacity = isDark ? 0.55 : 0.82;
   const subtitleColor = isDark
@@ -93,7 +87,9 @@ export default function ShoppingListManager() {
   const [pastList, setPastList] = useState<Item[]>([]);
   const [activeListId, setActiveListId] = useState<string | null>(null);
   const [listIds, setListIds] = useState<string[]>([]);
-  const [listNames, setListNames] = useState<Record<string, string>>({});
+  const [listMeta, setListMeta] = useState<
+    Record<string, { name?: string; shared?: boolean }>
+  >({});
   const [shareCodeInput, setShareCodeInput] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [needsListSetup, setNeedsListSetup] = useState(false);
@@ -125,9 +121,11 @@ export default function ShoppingListManager() {
     outputRange: [1, 0.35],
     extrapolate: "clamp",
   });
-  const isSharedList = Boolean(activeListId && !activeListId.startsWith("user:"));
+  const isSharedList = Boolean(activeListId && listMeta[activeListId]?.shared);
   const shareLink =
-    isSharedList && activeListId ? `smartpantry://join?code=${activeListId}` : "";
+    isSharedList && activeListId
+      ? `smartpantry://join?code=${activeListId}`
+      : "";
 
   const getItemsCollectionRef = useCallback(
     (uid: string) => {
@@ -144,12 +142,12 @@ export default function ShoppingListManager() {
 
   const getListLabel = useCallback(
     (id: string) => {
-      const name = listNames[id];
+      const name = listMeta[id]?.name;
       if (name) return name;
       if (id.startsWith("user:")) return "My List";
       return `Shared: ${id}`;
     },
-    [listNames],
+    [listMeta],
   );
 
   const animateKeyboard = useCallback(
@@ -213,26 +211,24 @@ export default function ShoppingListManager() {
         if (!snap.exists()) {
           setListIds([]);
           setActiveListId(null);
-          setListNames({});
+          setListMeta({});
           setNeedsListSetup(true);
           return;
         }
         const data = snap.data() as {
           activeListId?: string | null;
           listIds?: string[];
-          listNames?: Record<string, string>;
         };
         const existingListIds = data.listIds ?? [];
         if (!existingListIds.length) {
           setListIds([]);
           setActiveListId(null);
-          setListNames(data.listNames ?? {});
+          setListMeta({});
           setNeedsListSetup(true);
           return;
         }
         setListIds(existingListIds);
         setActiveListId(data.activeListId ?? existingListIds[0] ?? null);
-        setListNames(data.listNames ?? {});
         setNeedsListSetup(false);
       });
     });
@@ -276,13 +272,13 @@ export default function ShoppingListManager() {
         );
         setCurrentList((prev) => {
           const prevIndex = new Map(prev.map((item, idx) => [item.id, idx]));
-            const ordered = next
-              .slice()
-              .sort(
-                (
-                  a: { item: Item; updatedAt: number },
-                  b: { item: Item; updatedAt: number },
-                ) => {
+          const ordered = next
+            .slice()
+            .sort(
+              (
+                a: { item: Item; updatedAt: number },
+                b: { item: Item; updatedAt: number },
+              ) => {
                 const readdedA = recentlyReaddedRef.current.has(a.item.id);
                 const readdedB = recentlyReaddedRef.current.has(b.item.id);
                 if (readdedA && !readdedB) return -1;
@@ -296,8 +292,8 @@ export default function ShoppingListManager() {
                 if (indexB !== undefined) return 1;
                 return b.updatedAt - a.updatedAt;
               },
-              )
-              .map((entry: { item: Item; updatedAt: number }) => entry.item);
+            )
+            .map((entry: { item: Item; updatedAt: number }) => entry.item);
           for (const entry of ordered) {
             if (recentlyReaddedRef.current.has(entry.id)) {
               recentlyReaddedRef.current.delete(entry.id);
@@ -345,31 +341,37 @@ export default function ShoppingListManager() {
       unsubCurrent();
       unsubPast();
     };
-  }, [activeUid, getItemsCollectionRef]);
+  }, [activeUid, activeListId, getItemsCollectionRef]);
 
   useEffect(() => {
     let cancelled = false;
-    async function hydrateSharedNames() {
-      if (!activeUid || !listIds.length) return;
-      const sharedIds = listIds.filter((id) => !id.startsWith("user:"));
-      if (!sharedIds.length) return;
+    async function hydrateListMeta() {
+      if (!activeUid || !listIds.length) {
+        setListMeta({});
+        return;
+      }
       const results = await Promise.all(
-        sharedIds.map(async (id) => {
+        listIds.map(async (id) => {
           const snap = await getDoc(doc(db, "lists", id));
-          const data = snap.data() as { name?: string } | undefined;
-          return { id, name: data?.name };
+          const data = snap.data() as
+            | { name?: string; shared?: boolean }
+            | undefined;
+          return { id, name: data?.name, shared: data?.shared };
         }),
       );
       if (cancelled) return;
-      const nextNames: Record<string, string> = {};
+      const nextMeta: Record<string, { name?: string; shared?: boolean }> = {};
       for (const entry of results) {
-        if (entry.name) nextNames[entry.id] = entry.name;
+        if (entry.name || entry.shared !== undefined) {
+          nextMeta[entry.id] = {
+            name: entry.name,
+            shared: entry.shared,
+          };
+        }
       }
-      if (Object.keys(nextNames).length) {
-        setListNames((prev) => ({ ...prev, ...nextNames }));
-      }
+      setListMeta(nextMeta);
     }
-    void hydrateSharedNames();
+    void hydrateListMeta();
     return () => {
       cancelled = true;
     };
@@ -377,9 +379,9 @@ export default function ShoppingListManager() {
 
   useEffect(() => {
     if (!activeListId) return;
-    const existingName = listNames[activeListId] ?? "";
+    const existingName = listMeta[activeListId]?.name ?? "";
     setListNameInput(existingName);
-  }, [activeListId, listNames]);
+  }, [activeListId, listMeta]);
 
   useEffect(() => {
     if (!copyHint) return;
@@ -426,40 +428,95 @@ export default function ShoppingListManager() {
     const user = auth.currentUser;
     if (!user) return;
     const userRef = doc(db, "users", user.uid);
+    if (!activeListId) return;
 
-    let code = "";
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      code = generateInviteCode(6);
-      const listRef = doc(db, "lists", code);
-      const existing = await getDoc(listRef);
-      if (!existing.exists()) {
-        const initialName = listNameInput.trim() || "Shared List";
-        await setDoc(
-          listRef,
-          {
-            code,
-            createdBy: user.uid,
-            createdAt: serverTimestamp(),
-            shared: true,
-            name: initialName,
-          },
-          { merge: true },
-        );
-        await setDoc(
-          userRef,
-          {
-            activeListId: code,
-            listIds: arrayUnion(code),
-            listNames: { [code]: initialName },
-          },
-          { merge: true },
-        );
-        setListNameInput("");
-        setNotice(null);
-        return;
+    const currentName =
+      listMeta[activeListId]?.name || listNameInput.trim() || "Shared List";
+
+    if (activeListId.startsWith("user:")) {
+      let code = "";
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        code = generateInviteCode(6);
+        const listRef = doc(db, "lists", code);
+        const existing = await getDoc(listRef);
+        if (!existing.exists()) {
+          await setDoc(
+            listRef,
+            {
+              code,
+              createdBy: user.uid,
+              createdAt: serverTimestamp(),
+              shared: true,
+              name: currentName,
+            },
+            { merge: true },
+          );
+          const personalItemsRef = collection(
+            db,
+            "users",
+            user.uid,
+            "shopping_items",
+          );
+          const snap = await getDocs(personalItemsRef);
+          await Promise.all(
+            snap.docs.map(
+              (docSnap: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+                const data = docSnap.data() as { deleted?: boolean };
+                if (data?.deleted) return Promise.resolve();
+                return setDoc(
+                  doc(db, "lists", code, "items", docSnap.id),
+                  data,
+                );
+              },
+            ),
+          );
+          await setDoc(
+            userRef,
+            {
+              activeListId: code,
+              listIds: arrayUnion(code),
+            },
+            { merge: true },
+          );
+          await updateDoc(userRef, { listIds: arrayRemove(activeListId) });
+          setListMeta((prev) => {
+            const next = { ...prev };
+            delete next[activeListId];
+            next[code] = { name: currentName, shared: true };
+            return next;
+          });
+          setListNameInput("");
+          setNotice(null);
+          return;
+        }
       }
+      setNotice("Could not create a unique invite code. Try again.");
+      return;
     }
-    setNotice("Could not create a unique invite code. Try again.");
+
+    const listRef = doc(db, "lists", activeListId);
+    const existing = await getDoc(listRef);
+    const existingShared = existing.data()?.shared;
+    if (existing.exists() && existingShared) {
+      setNotice("This list is already shared.");
+      return;
+    }
+    await setDoc(
+      listRef,
+      {
+        code: activeListId,
+        createdBy: user.uid,
+        createdAt: serverTimestamp(),
+        shared: true,
+        name: currentName,
+      },
+      { merge: true },
+    );
+    setListMeta((prev) => ({
+      ...prev,
+      [activeListId]: { name: currentName, shared: true },
+    }));
+    setNotice(null);
   }
 
   async function joinSharedList(rawCode: string) {
@@ -482,13 +539,12 @@ export default function ShoppingListManager() {
       { activeListId: normalized, listIds: arrayUnion(normalized) },
       { merge: true },
     );
-    const listData = snap.data() as { name?: string };
-    if (listData?.name) {
-      await setDoc(
-        userRef,
-        { listNames: { [normalized]: listData.name } },
-        { merge: true },
-      );
+    const listData = snap.data() as { name?: string; shared?: boolean };
+    if (listData?.name || listData?.shared !== undefined) {
+      setListMeta((prev) => ({
+        ...prev,
+        [normalized]: { name: listData.name, shared: listData.shared },
+      }));
     }
     setShareCodeInput("");
     setNotice(null);
@@ -498,8 +554,7 @@ export default function ShoppingListManager() {
     const user = auth.currentUser;
     if (!user || !activeListId) return;
     const userRef = doc(db, "users", user.uid);
-    const fallback =
-      listIds.find((id) => id !== activeListId) ?? `user:${user.uid}`;
+    const fallback = listIds.find((id) => id !== activeListId) ?? null;
     await setDoc(
       userRef,
       {
@@ -508,6 +563,23 @@ export default function ShoppingListManager() {
       },
       { merge: true },
     );
+    if (listMeta[activeListId]?.shared) {
+      const usersRef = collection(db, "users");
+      const membersSnap = await getDocs(
+        query(usersRef, where("listIds", "array-contains", activeListId)),
+      );
+      if (membersSnap.empty) {
+        const itemsRef = collection(db, "lists", activeListId, "items");
+        const itemsSnap = await getDocs(itemsRef);
+        await Promise.all(
+          itemsSnap.docs.map(
+            (docSnap: FirebaseFirestoreTypes.QueryDocumentSnapshot) =>
+              deleteDoc(docSnap.ref),
+          ),
+        );
+        await deleteDoc(doc(db, "lists", activeListId));
+      }
+    }
     setNotice(null);
   }
 
@@ -522,19 +594,39 @@ export default function ShoppingListManager() {
     const user = auth.currentUser;
     if (!user) return;
     const userRef = doc(db, "users", user.uid);
-    const personalId = `user:${user.uid}`;
     const name = listNameInput.trim() || "My List";
-    await setDoc(
-      userRef,
-      {
-        activeListId: personalId,
-        listIds: arrayUnion(personalId),
-        listNames: { [personalId]: name },
-      },
-      { merge: true },
-    );
-    setListNameInput("");
-    setNotice(null);
+    let code = "";
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      code = generateInviteCode(6);
+      const listRef = doc(db, "lists", code);
+      const existing = await getDoc(listRef);
+      if (!existing.exists()) {
+        await setDoc(
+          listRef,
+          {
+            code,
+            name,
+            createdBy: user.uid,
+            createdAt: serverTimestamp(),
+            shared: false,
+          },
+          { merge: true },
+        );
+        await setDoc(
+          userRef,
+          {
+            activeListId: code,
+            listIds: arrayUnion(code),
+          },
+          { merge: true },
+        );
+        setListMeta((prev) => ({ ...prev, [code]: { name, shared: false } }));
+        setListNameInput("");
+        setNotice(null);
+        return;
+      }
+    }
+    setNotice("Could not create a unique invite code. Try again.");
   }
 
   async function renameActiveList(nextName: string) {
@@ -542,23 +634,12 @@ export default function ShoppingListManager() {
     if (!user || !activeListId) return;
     const name = nextName.trim();
     if (!name) return;
-    if (activeListId.startsWith("user:")) {
-      const userRef = doc(db, "users", user.uid);
-      await setDoc(
-        userRef,
-        { listNames: { [activeListId]: name } },
-        { merge: true },
-      );
-    } else {
-      const listRef = doc(db, "lists", activeListId);
-      await setDoc(listRef, { name }, { merge: true });
-      const userRef = doc(db, "users", user.uid);
-      await setDoc(
-        userRef,
-        { listNames: { [activeListId]: name } },
-        { merge: true },
-      );
-    }
+    const listRef = doc(db, "lists", activeListId);
+    await setDoc(listRef, { name }, { merge: true });
+    setListMeta((prev) => ({
+      ...prev,
+      [activeListId]: { name, shared: prev[activeListId]?.shared },
+    }));
     setNotice(null);
   }
 
@@ -813,26 +894,32 @@ export default function ShoppingListManager() {
 
   return (
     <View style={styles.container}>
-      <Animated.View
-        style={[
-          styles.listsWrapper,
-          {
-            paddingBottom: Math.max(searchDockHeight + keyboardLift + 12, 12),
-            opacity: listDimOpacity,
-          },
-        ]}
-        pointerEvents={keyboardVisible ? "none" : "auto"}
-      >
-        <View style={styles.listSection}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleRow}>
-              <Text style={[styles.sectionTitle, { color: c.text }]}>
+      {!needsListSetup ? (
+        <Animated.View
+          style={[
+            styles.listsWrapper,
+            {
+              paddingBottom: Math.max(searchDockHeight + keyboardLift + 12, 12),
+              opacity: listDimOpacity,
+            },
+          ]}
+          pointerEvents={keyboardVisible ? "none" : "auto"}
+        >
+          <View
+            style={[
+              styles.listHeaderCard,
+              { backgroundColor: surfaceCard, borderColor: surfaceBorder },
+            ]}
+          >
+            <View style={styles.listHeaderTop}>
+              <Text style={[styles.listHeaderTitle, { color: c.text }]}>
                 {activeListId ? getListLabel(activeListId) : "Your Lists"}
               </Text>
               <Pressable
                 onPress={() => setSettingsOpen(true)}
                 style={({ pressed }) => [
-                  styles.settingsButton,
+                  styles.shareIconButton,
+                  { borderColor: surfaceBorder },
                   pressed && { opacity: 0.7 },
                 ]}
                 accessibilityRole="button"
@@ -845,192 +932,279 @@ export default function ShoppingListManager() {
                 />
               </Pressable>
             </View>
-            <Text style={[styles.sectionMeta, { color: sectionMetaColor }]}>
-              Swipe right if bought
-            </Text>
-          </View>
-          <View
-            style={[
-              styles.card,
-              styles.listCard,
-              { backgroundColor: surfaceCard, borderColor: surfaceBorder },
-            ]}
-          >
-            <FlatList
-              ref={currentListRef}
-              data={currentList}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) =>
-                renderItem({
-                  item,
-                  onPress: moveToPast,
-                  onDelete: async (i) => {
-                    const user = auth.currentUser;
-                    if (!user) return;
-                    const itemsRef = getItemsCollectionRef(user.uid);
-                    const itemRef = doc(itemsRef, i.id);
-                    await updateDoc(itemRef, {
-                      deleted: true,
-                      updatedAt: serverTimestamp(),
-                    });
-                  },
-                })
-              }
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator
-              indicatorStyle="white"
-              scrollEventThrottle={16}
-              onScroll={(e) => {
-                const { layoutMeasurement, contentOffset, contentSize } =
-                  e.nativeEvent;
-                const atEnd =
-                  layoutMeasurement.height + contentOffset.y >=
-                  contentSize.height - 4;
-                setCurrentAtEnd(atEnd);
-              }}
-            />
-            <View
-              pointerEvents="none"
-              style={[styles.fadeTop, { backgroundColor: fadeColor }]}
-            />
-            <View
-              pointerEvents="none"
-              style={[styles.fadeBottom, { backgroundColor: fadeColor }]}
-            />
-            {currentList.length > 4 && !currentAtEnd ? (
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  styles.scrollHintOverlay,
-                  {
-                    opacity: bounceAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.6, 1],
-                    }),
-                  },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.scrollHintPill,
-                    {
-                      backgroundColor: scrollPillBg,
-                      borderColor: scrollPillBorder,
-                    },
+            <View style={styles.listHeaderRow}>
+              {isSharedList ? (
+                <>
+                  <View style={styles.avatarRow}>
+                    <View
+                      style={[
+                        styles.avatarCircle,
+                        { backgroundColor: "rgba(163,177,138,0.35)" },
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name="account"
+                        size={14}
+                        color={c.text}
+                      />
+                    </View>
+                    <View
+                      style={[
+                        styles.avatarCircle,
+                        { backgroundColor: "rgba(163,177,138,0.25)" },
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name="account"
+                        size={14}
+                        color={c.text}
+                      />
+                    </View>
+                    <View
+                      style={[
+                        styles.avatarCircle,
+                        { backgroundColor: "rgba(163,177,138,0.2)" },
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name="account"
+                        size={14}
+                        color={c.text}
+                      />
+                    </View>
+                  </View>
+                  <Text
+                    style={[styles.listHeaderMeta, { color: sectionMetaColor }]}
+                  >
+                    Shared list
+                  </Text>
+                </>
+              ) : (
+                <Pressable
+                  onPress={() => setSettingsOpen(true)}
+                  style={({ pressed }) => [
+                    styles.inviteOutline,
+                    { borderColor: surfaceBorder },
+                    pressed && { opacity: 0.7 },
                   ]}
                 >
                   <MaterialCommunityIcons
-                    name="chevron-down"
-                    size={16}
-                    color={isDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.6)"}
+                    name="account-plus-outline"
+                    size={14}
+                    color={sectionMetaColor}
                   />
                   <Text
-                    style={[styles.scrollHintText, { color: scrollTextColor }]}
+                    style={[styles.inviteText, { color: sectionMetaColor }]}
                   >
-                    Scroll
+                    Invite friend
                   </Text>
-                </View>
-              </Animated.View>
-            ) : null}
+                </Pressable>
+              )}
+            </View>
           </View>
-        </View>
 
-        <View style={styles.listSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: c.text }]}>
-              Previous Items
-            </Text>
-            <Text style={[styles.sectionMeta, { color: sectionMetaColor }]}>
-              Swipe right to re-add
-            </Text>
-          </View>
-          <View
-            style={[
-              styles.card,
-              styles.listCard,
-              { backgroundColor: surfaceCard, borderColor: surfaceBorder },
-            ]}
-          >
-            <FlatList
-              data={pastList}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) =>
-                renderItem({
-                  item,
-                  onPress: movePastToCurrent,
-                  dimmed: true,
-                  showQuantity: false,
-                  onDelete: async (i) => {
-                    const user = auth.currentUser;
-                    if (!user) return;
-                    const itemsRef = getItemsCollectionRef(user.uid);
-                    const itemRef = doc(itemsRef, i.id);
-                    await updateDoc(itemRef, {
-                      deleted: true,
-                      updatedAt: serverTimestamp(),
-                    });
-                  },
-                })
-              }
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator
-              indicatorStyle="white"
-              scrollEventThrottle={16}
-              onScroll={(e) => {
-                const { layoutMeasurement, contentOffset, contentSize } =
-                  e.nativeEvent;
-                const atEnd =
-                  layoutMeasurement.height + contentOffset.y >=
-                  contentSize.height - 4;
-                setPastAtEnd(atEnd);
-              }}
-            />
+          <View style={styles.listSection}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: c.text }]}>
+                Groceries List
+              </Text>
+              <Text style={[styles.sectionMeta, { color: sectionMetaColor }]}>
+                Swipe right if bought
+              </Text>
+            </View>
             <View
-              pointerEvents="none"
-              style={[styles.fadeTop, { backgroundColor: fadeColor }]}
-            />
-            <View
-              pointerEvents="none"
-              style={[styles.fadeBottom, { backgroundColor: fadeColor }]}
-            />
-            {pastList.length > 4 && !pastAtEnd ? (
-              <Animated.View
+              style={[
+                styles.card,
+                styles.listCard,
+                { backgroundColor: surfaceCard, borderColor: surfaceBorder },
+              ]}
+            >
+              <FlatList
+                ref={currentListRef}
+                data={currentList}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) =>
+                  renderItem({
+                    item,
+                    onPress: moveToPast,
+                    onDelete: async (i) => {
+                      const user = auth.currentUser;
+                      if (!user) return;
+                      const itemsRef = getItemsCollectionRef(user.uid);
+                      const itemRef = doc(itemsRef, i.id);
+                      await updateDoc(itemRef, {
+                        deleted: true,
+                        updatedAt: serverTimestamp(),
+                      });
+                    },
+                  })
+                }
+                contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator
+                indicatorStyle="white"
+                scrollEventThrottle={16}
+                onScroll={(e) => {
+                  const { layoutMeasurement, contentOffset, contentSize } =
+                    e.nativeEvent;
+                  const atEnd =
+                    layoutMeasurement.height + contentOffset.y >=
+                    contentSize.height - 4;
+                  setCurrentAtEnd(atEnd);
+                }}
+              />
+              <View
                 pointerEvents="none"
-                style={[
-                  styles.scrollHintOverlay,
-                  {
-                    opacity: bounceAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.6, 1],
-                    }),
-                  },
-                ]}
-              >
-                <View
+                style={[styles.fadeTop, { backgroundColor: fadeColor }]}
+              />
+              <View
+                pointerEvents="none"
+                style={[styles.fadeBottom, { backgroundColor: fadeColor }]}
+              />
+              {currentList.length > 4 && !currentAtEnd ? (
+                <Animated.View
+                  pointerEvents="none"
                   style={[
-                    styles.scrollHintPill,
+                    styles.scrollHintOverlay,
                     {
-                      backgroundColor: scrollPillBg,
-                      borderColor: scrollPillBorder,
+                      opacity: bounceAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.6, 1],
+                      }),
                     },
                   ]}
                 >
-                  <MaterialCommunityIcons
-                    name="chevron-down"
-                    size={16}
-                    color={isDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.6)"}
-                  />
-                  <Text
-                    style={[styles.scrollHintText, { color: scrollTextColor }]}
+                  <View
+                    style={[
+                      styles.scrollHintPill,
+                      {
+                        backgroundColor: scrollPillBg,
+                        borderColor: scrollPillBorder,
+                      },
+                    ]}
                   >
-                    Scroll
-                  </Text>
-                </View>
-              </Animated.View>
-            ) : null}
+                    <MaterialCommunityIcons
+                      name="chevron-down"
+                      size={16}
+                      color={
+                        isDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.6)"
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.scrollHintText,
+                        { color: scrollTextColor },
+                      ]}
+                    >
+                      Scroll
+                    </Text>
+                  </View>
+                </Animated.View>
+              ) : null}
+            </View>
           </View>
-        </View>
-      </Animated.View>
+
+          <View style={styles.listSection}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: c.text }]}>
+                Previous Items
+              </Text>
+              <Text style={[styles.sectionMeta, { color: sectionMetaColor }]}>
+                Swipe right to re-add
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.card,
+                styles.listCard,
+                { backgroundColor: surfaceCard, borderColor: surfaceBorder },
+              ]}
+            >
+              <FlatList
+                data={pastList}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) =>
+                  renderItem({
+                    item,
+                    onPress: movePastToCurrent,
+                    dimmed: true,
+                    showQuantity: false,
+                    onDelete: async (i) => {
+                      const user = auth.currentUser;
+                      if (!user) return;
+                      const itemsRef = getItemsCollectionRef(user.uid);
+                      const itemRef = doc(itemsRef, i.id);
+                      await updateDoc(itemRef, {
+                        deleted: true,
+                        updatedAt: serverTimestamp(),
+                      });
+                    },
+                  })
+                }
+                contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator
+                indicatorStyle="white"
+                scrollEventThrottle={16}
+                onScroll={(e) => {
+                  const { layoutMeasurement, contentOffset, contentSize } =
+                    e.nativeEvent;
+                  const atEnd =
+                    layoutMeasurement.height + contentOffset.y >=
+                    contentSize.height - 4;
+                  setPastAtEnd(atEnd);
+                }}
+              />
+              <View
+                pointerEvents="none"
+                style={[styles.fadeTop, { backgroundColor: fadeColor }]}
+              />
+              <View
+                pointerEvents="none"
+                style={[styles.fadeBottom, { backgroundColor: fadeColor }]}
+              />
+              {pastList.length > 4 && !pastAtEnd ? (
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.scrollHintOverlay,
+                    {
+                      opacity: bounceAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.6, 1],
+                      }),
+                    },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.scrollHintPill,
+                      {
+                        backgroundColor: scrollPillBg,
+                        borderColor: scrollPillBorder,
+                      },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="chevron-down"
+                      size={16}
+                      color={
+                        isDark ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.6)"
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.scrollHintText,
+                        { color: scrollTextColor },
+                      ]}
+                    >
+                      Scroll
+                    </Text>
+                  </View>
+                </Animated.View>
+              ) : null}
+            </View>
+          </View>
+        </Animated.View>
+      ) : null}
 
       {keyboardVisible ? (
         <Pressable
@@ -1039,57 +1213,67 @@ export default function ShoppingListManager() {
         />
       ) : null}
 
-      <View style={styles.searchDockWrapper} pointerEvents="box-none">
-        <Animated.View
-          style={[styles.searchDock, { bottom: keyboardOffsetAnim }]}
-        >
-          <View
-            style={[
-              styles.heroCard,
-              {
-                backgroundColor: isDark
-                  ? surfaceHero
-                  : "rgba(163,177,138,0.28)",
-                borderColor: isDark ? c.olive : "rgba(88,129,87,0.75)",
-                shadowOpacity: isDark ? styles.heroCard.shadowOpacity : 0,
-                elevation: isDark ? styles.heroCard.elevation : 0,
-              },
-            ]}
-            onLayout={(e) => setSearchDockHeight(e.nativeEvent.layout.height)}
+      {!needsListSetup ? (
+        <View style={styles.searchDockWrapper} pointerEvents="box-none">
+          <Animated.View
+            style={[styles.searchDock, { bottom: keyboardOffsetAnim }]}
           >
-            <Text style={[styles.cardTitle, { color: c.text }]}>
-              Build your list
-            </Text>
-            <Text style={[styles.cardSubtitle, { color: subtitleColor }]}>
-              Search and add items to your current list.
-            </Text>
-            {notice ? (
-              <Text style={[styles.notice, { color: "rgba(217,100,89,0.85)" }]}>
-                {notice}
+            <View
+              style={[
+                styles.heroCard,
+                {
+                  backgroundColor: isDark
+                    ? surfaceHero
+                    : "rgba(163,177,138,0.28)",
+                  borderColor: isDark ? c.olive : "rgba(88,129,87,0.75)",
+                  shadowOpacity: isDark ? styles.heroCard.shadowOpacity : 0,
+                  elevation: isDark ? styles.heroCard.elevation : 0,
+                },
+              ]}
+              onLayout={(e) => setSearchDockHeight(e.nativeEvent.layout.height)}
+            >
+              <Text style={[styles.cardTitle, { color: c.text }]}>
+                Build your list
               </Text>
-            ) : null}
-            {!activeUid ? (
-              <Text style={[styles.notice, { color: "rgba(217,100,89,0.85)" }]}>
-                Not signed in. Lists won’t load.
+              <Text style={[styles.cardSubtitle, { color: subtitleColor }]}>
+                Search and add items to your current list.
               </Text>
-            ) : null}
-            <FoodIconSearch
-              onSubmit={addToCurrent}
-              showPreview={false}
-              variant={isDark ? "dark" : "light"}
-              onFocus={() => {
-                const height = lastKeyboardHeight.current || defaultKeyboardHeight;
-                setKeyboardOffset(height);
-                animateKeyboard(height, Platform.OS === "android" ? 140 : 180);
-              }}
-              onBlur={() => {
-                setKeyboardOffset(0);
-                animateKeyboard(0, Platform.OS === "android" ? 160 : 200);
-              }}
-            />
-          </View>
-        </Animated.View>
-      </View>
+              {notice ? (
+                <Text
+                  style={[styles.notice, { color: "rgba(217,100,89,0.85)" }]}
+                >
+                  {notice}
+                </Text>
+              ) : null}
+              {!activeUid ? (
+                <Text
+                  style={[styles.notice, { color: "rgba(217,100,89,0.85)" }]}
+                >
+                  Not signed in. Lists won’t load.
+                </Text>
+              ) : null}
+              <FoodIconSearch
+                onSubmit={addToCurrent}
+                showPreview={false}
+                variant={isDark ? "dark" : "light"}
+                onFocus={() => {
+                  const height =
+                    lastKeyboardHeight.current || defaultKeyboardHeight;
+                  setKeyboardOffset(height);
+                  animateKeyboard(
+                    height,
+                    Platform.OS === "android" ? 140 : 180,
+                  );
+                }}
+                onBlur={() => {
+                  setKeyboardOffset(0);
+                  animateKeyboard(0, Platform.OS === "android" ? 160 : 200);
+                }}
+              />
+            </View>
+          </Animated.View>
+        </View>
+      ) : null}
 
       <Modal
         transparent
@@ -1126,6 +1310,56 @@ export default function ShoppingListManager() {
                 />
               </Pressable>
             </View>
+
+            {activeListId ? (
+              <View
+                style={[
+                  styles.renameCard,
+                  {
+                    borderColor: surfaceBorder,
+                    backgroundColor: isDark
+                      ? "rgba(255,255,255,0.03)"
+                      : "rgba(0,0,0,0.04)",
+                  },
+                ]}
+              >
+                <Text style={[styles.shareTitle, { color: c.text }]}>
+                  List name
+                </Text>
+                <View style={styles.renameRow}>
+                  <TextInput
+                    value={listNameInput}
+                    onChangeText={setListNameInput}
+                    placeholder="List name"
+                    placeholderTextColor={sectionMetaColor}
+                    autoCorrect={false}
+                    maxLength={32}
+                    style={[
+                      styles.shareInput,
+                      styles.shareInputRow,
+                      {
+                        color: c.text,
+                        borderColor: surfaceBorder,
+                      },
+                    ]}
+                  />
+                  <Pressable
+                    onPress={() => renameActiveList(listNameInput)}
+                    disabled={!activeUid || !activeListId}
+                    style={({ pressed }) => [
+                      styles.shareButtonSmall,
+                      { borderColor: surfaceBorder },
+                      pressed && { opacity: 0.7 },
+                      (!activeUid || !activeListId) && { opacity: 0.5 },
+                    ]}
+                  >
+                    <Text style={[styles.shareButtonText, { color: c.text }]}>
+                      Save
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
 
             <View
               style={[
@@ -1173,55 +1407,6 @@ export default function ShoppingListManager() {
               </View>
             </View>
 
-            {activeListId ? (
-              <View
-                style={[
-                  styles.renameCard,
-                  {
-                    borderColor: surfaceBorder,
-                    backgroundColor: isDark
-                      ? "rgba(255,255,255,0.03)"
-                      : "rgba(0,0,0,0.04)",
-                  },
-                ]}
-              >
-                <Text style={[styles.shareTitle, { color: c.text }]}>
-                  List name
-                </Text>
-                <View style={styles.renameRow}>
-                  <TextInput
-                    value={listNameInput}
-                    onChangeText={setListNameInput}
-                    placeholder="List name"
-                    placeholderTextColor={sectionMetaColor}
-                    autoCorrect={false}
-                    maxLength={32}
-                    style={[
-                      styles.shareInput,
-                      {
-                        color: c.text,
-                        borderColor: surfaceBorder,
-                      },
-                    ]}
-                  />
-                  <Pressable
-                    onPress={() => renameActiveList(listNameInput)}
-                    disabled={!activeUid || !activeListId}
-                    style={({ pressed }) => [
-                      styles.shareButtonSmall,
-                      { borderColor: surfaceBorder },
-                      pressed && { opacity: 0.7 },
-                      (!activeUid || !activeListId) && { opacity: 0.5 },
-                    ]}
-                  >
-                    <Text style={[styles.shareButtonText, { color: c.text }]}>
-                      Save
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-            ) : null}
-
             <View
               style={[
                 styles.shareCard,
@@ -1233,70 +1418,141 @@ export default function ShoppingListManager() {
                 },
               ]}
             >
-              <View style={styles.shareHeaderRow}>
-                <Text style={[styles.shareTitle, { color: c.text }]}>
-                  Sharing
-                </Text>
-                <Text style={[styles.shareMeta, { color: sectionMetaColor }]}>
-                  {isSharedList ? "On" : "Off"}
-                </Text>
-              </View>
+              <Text style={[styles.settingsSectionTitle, { color: c.text }]}>
+                Sharing
+              </Text>
               {isSharedList && activeListId ? (
                 <>
-                  <Pressable
-                    onPress={async () => {
-                      await Clipboard.setStringAsync(activeListId);
-                      setCopyHint("code");
-                    }}
-                    style={({ pressed }) => [
-                      styles.shareLinkRow,
-                      { borderColor: surfaceBorder },
-                      pressed && { opacity: 0.7 },
+                  <Text
+                    style={[
+                      styles.settingsSectionSubtitle,
+                      { color: sectionMetaColor },
                     ]}
                   >
-                    <Text
+                    Currently shared with
+                  </Text>
+                  <View style={styles.memberRow}>
+                    <View
                       style={[
-                        styles.shareLinkText,
-                        { color: subtitleColor },
+                        styles.memberAvatar,
+                        { backgroundColor: "rgba(163,177,138,0.22)" },
                       ]}
                     >
-                      Invite code: {activeListId}
+                      <MaterialCommunityIcons
+                        name="account"
+                        size={14}
+                        color={c.text}
+                      />
+                    </View>
+                    <Text style={[styles.memberName, { color: c.text }]}>
+                      You
+                    </Text>
+                    <Text
+                      style={[styles.memberRole, { color: sectionMetaColor }]}
+                    >
+                      Admin
                     </Text>
                     <MaterialCommunityIcons
-                      name="content-copy"
-                      size={14}
+                      name="crown"
+                      size={12}
                       color={sectionMetaColor}
                     />
-                  </Pressable>
-                  <Pressable
-                    onPress={async () => {
-                      if (!shareLink) return;
-                      await Clipboard.setStringAsync(shareLink);
-                      setCopyHint("link");
-                    }}
-                    style={({ pressed }) => [
-                      styles.shareLinkRow,
-                      { borderColor: surfaceBorder },
-                      pressed && { opacity: 0.7 },
+                  </View>
+
+                  <Text
+                    style={[
+                      styles.settingsSectionSubtitle,
+                      { color: sectionMetaColor },
                     ]}
                   >
-                    <Text
-                      style={[
-                        styles.shareLinkText,
-                        { color: subtitleColor },
+                    Share methods
+                  </Text>
+                  <View
+                    style={[
+                      styles.shareMethodsCard,
+                      {
+                        borderColor: surfaceBorder,
+                        backgroundColor: isDark
+                          ? "rgba(255,255,255,0.03)"
+                          : "rgba(0,0,0,0.04)",
+                      },
+                    ]}
+                  >
+                    <Pressable
+                      onPress={async () => {
+                        if (!shareLink) return;
+                        await Clipboard.setStringAsync(shareLink);
+                        setCopyHint("link");
+                      }}
+                      style={({ pressed }) => [
+                        styles.shareMethodRow,
+                        pressed && { opacity: 0.7 },
                       ]}
-                      numberOfLines={1}
                     >
-                      Invite link: {shareLink}
-                    </Text>
-                    <MaterialCommunityIcons
-                      name="content-copy"
-                      size={14}
-                      color={sectionMetaColor}
+                      <MaterialCommunityIcons
+                        name="link-variant"
+                        size={14}
+                        color={sectionMetaColor}
+                      />
+                      <Text
+                        style={[
+                          styles.shareMethodText,
+                          { color: subtitleColor },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        Invite link
+                      </Text>
+                      <MaterialCommunityIcons
+                        name="content-copy"
+                        size={14}
+                        color={sectionMetaColor}
+                      />
+                    </Pressable>
+                    <View
+                      style={[
+                        styles.shareMethodDivider,
+                        {
+                          backgroundColor: isDark
+                            ? "rgba(255,255,255,0.12)"
+                            : "rgba(0,0,0,0.08)",
+                        },
+                      ]}
                     />
-                  </Pressable>
+                    <Pressable
+                      onPress={async () => {
+                        await Clipboard.setStringAsync(activeListId);
+                        setCopyHint("code");
+                      }}
+                      style={({ pressed }) => [
+                        styles.shareMethodRow,
+                        pressed && { opacity: 0.7 },
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name="key-outline"
+                        size={14}
+                        color={sectionMetaColor}
+                      />
+                      <Text
+                        style={[
+                          styles.shareMethodText,
+                          { color: subtitleColor },
+                        ]}
+                      >
+                        Invite code: {activeListId}
+                      </Text>
+                      <MaterialCommunityIcons
+                        name="content-copy"
+                        size={14}
+                        color={sectionMetaColor}
+                      />
+                    </Pressable>
+                  </View>
                   {copyHint ? (
-                    <Text style={[styles.copyHint, { color: sectionMetaColor }]}>
+                    <Text
+                      style={[styles.copyHint, { color: sectionMetaColor }]}
+                    >
                       {copyHint === "code" ? "Code copied" : "Link copied"}
                     </Text>
                   ) : null}
@@ -1304,64 +1560,79 @@ export default function ShoppingListManager() {
                     onPress={leaveSharedList}
                     disabled={!activeUid || !activeListId}
                     style={({ pressed }) => [
-                      styles.shareButton,
-                      { borderColor: surfaceBorder },
+                      styles.dangerButton,
                       pressed && { opacity: 0.7 },
                       (!activeUid || !activeListId) && { opacity: 0.5 },
                     ]}
                   >
-                    <Text style={[styles.shareButtonText, { color: c.text }]}>
-                      Leave shared list
-                    </Text>
+                    <Text style={styles.dangerButtonText}>Leave list</Text>
                   </Pressable>
                 </>
               ) : (
                 <>
-                  <View style={styles.shareJoinRow}>
-                    <TextInput
-                      value={shareCodeInput}
-                      onChangeText={setShareCodeInput}
-                      placeholder="Invite code"
-                      placeholderTextColor={sectionMetaColor}
-                      autoCapitalize="characters"
-                      autoCorrect={false}
-                      maxLength={10}
-                      style={[
-                        styles.shareInput,
-                        {
-                          color: c.text,
-                          borderColor: surfaceBorder,
-                        },
-                      ]}
-                    />
-                    <Pressable
-                      onPress={() => joinSharedList(shareCodeInput)}
-                      disabled={!activeUid}
-                      style={({ pressed }) => [
-                        styles.shareButtonSmall,
-                        { borderColor: surfaceBorder },
-                        pressed && { opacity: 0.7 },
-                        !activeUid && { opacity: 0.5 },
-                      ]}
-                    >
-                      <Text style={[styles.shareButtonText, { color: c.text }]}>
-                        Join
-                      </Text>
-                    </Pressable>
-                  </View>
+                  <Text
+                    style={[
+                      styles.settingsSectionSubtitle,
+                      { color: sectionMetaColor },
+                    ]}
+                  >
+                    This list is private.
+                  </Text>
+
                   <Pressable
                     onPress={createSharedList}
                     disabled={!activeUid}
                     style={({ pressed }) => [
-                      styles.shareButton,
+                      styles.secondaryActionButton,
                       { borderColor: surfaceBorder },
                       pressed && { opacity: 0.7 },
                       !activeUid && { opacity: 0.5 },
                     ]}
                   >
-                    <Text style={[styles.shareButtonText, { color: c.text }]}>
-                      Create invite
+                    <Text
+                      style={[styles.secondaryActionText, { color: c.text }]}
+                    >
+                      Make shareable
                     </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={async () => {
+                      if (!activeUid || !activeListId) return;
+                      const userRef = doc(db, "users", activeUid);
+                      const fallback =
+                        listIds.find((id) => id !== activeListId) ?? null;
+                      await setDoc(
+                        userRef,
+                        {
+                          activeListId: fallback,
+                          listIds: arrayRemove(activeListId),
+                        },
+                        { merge: true },
+                      );
+                      const itemsRef = collection(
+                        db,
+                        "lists",
+                        activeListId,
+                        "items",
+                      );
+                      const itemsSnap = await getDocs(itemsRef);
+                      await Promise.all(
+                        itemsSnap.docs.map(
+                          (docSnap: FirebaseFirestoreTypes.QueryDocumentSnapshot) =>
+                            deleteDoc(docSnap.ref),
+                        ),
+                      );
+                      await deleteDoc(doc(db, "lists", activeListId));
+                      setNotice(null);
+                    }}
+                    disabled={!activeUid || !activeListId}
+                    style={({ pressed }) => [
+                      styles.dangerOutlineButton,
+                      pressed && { opacity: 0.7 },
+                      (!activeUid || !activeListId) && { opacity: 0.5 },
+                    ]}
+                  >
+                    <Text style={styles.dangerOutlineText}>Delete list</Text>
                   </Pressable>
                 </>
               )}
@@ -1393,17 +1664,25 @@ export default function ShoppingListManager() {
             <View
               style={[
                 styles.renameCard,
+                styles.setupCreateCard,
                 {
                   borderColor: surfaceBorder,
                   backgroundColor: isDark
-                    ? "rgba(255,255,255,0.03)"
-                    : "rgba(0,0,0,0.04)",
+                    ? "rgba(255,255,255,0.06)"
+                    : "rgba(88,129,87,0.08)",
                 },
               ]}
             >
-              <Text style={[styles.shareTitle, { color: c.text }]}>
-                New list name
-              </Text>
+              <View style={styles.sectionTitleRow}>
+                <MaterialCommunityIcons
+                  name="plus-circle-outline"
+                  size={16}
+                  color={sectionMetaColor}
+                />
+                <Text style={[styles.shareTitle, { color: c.text }]}>
+                  New list name
+                </Text>
+              </View>
               <TextInput
                 value={listNameInput}
                 onChangeText={setListNameInput}
@@ -1423,32 +1702,64 @@ export default function ShoppingListManager() {
                 onPress={createPersonalList}
                 disabled={!activeUid}
                 style={({ pressed }) => [
-                  styles.shareButton,
-                  { borderColor: surfaceBorder },
+                  styles.primaryActionButton,
+                  { backgroundColor: c.primary },
                   pressed && { opacity: 0.7 },
                   !activeUid && { opacity: 0.5 },
                 ]}
               >
-                <Text style={[styles.shareButtonText, { color: c.text }]}>
-                  Create list
-                </Text>
+                <Text style={styles.primaryActionText}>Create list</Text>
               </Pressable>
+            </View>
+
+            <View style={styles.orDividerRow}>
+              <View
+                style={[
+                  styles.orDividerLine,
+                  {
+                    backgroundColor: isDark
+                      ? "rgba(255,255,255,0.12)"
+                      : "rgba(0,0,0,0.08)",
+                  },
+                ]}
+              />
+              <Text style={[styles.orDividerText, { color: sectionMetaColor }]}>
+                or
+              </Text>
+              <View
+                style={[
+                  styles.orDividerLine,
+                  {
+                    backgroundColor: isDark
+                      ? "rgba(255,255,255,0.12)"
+                      : "rgba(0,0,0,0.08)",
+                  },
+                ]}
+              />
             </View>
 
             <View
               style={[
                 styles.renameCard,
+                styles.setupJoinCard,
                 {
                   borderColor: surfaceBorder,
                   backgroundColor: isDark
-                    ? "rgba(255,255,255,0.03)"
-                    : "rgba(0,0,0,0.04)",
+                    ? "rgba(0,0,0,0.16)"
+                    : "rgba(88,129,87,0.12)",
                 },
               ]}
             >
-              <Text style={[styles.shareTitle, { color: c.text }]}>
-                Join with code
-              </Text>
+              <View style={styles.sectionTitleRow}>
+                <MaterialCommunityIcons
+                  name="link-variant"
+                  size={16}
+                  color={sectionMetaColor}
+                />
+                <Text style={[styles.shareTitle, { color: c.text }]}>
+                  Join with code
+                </Text>
+              </View>
               <View style={styles.shareJoinRow}>
                 <TextInput
                   value={shareCodeInput}
@@ -1460,6 +1771,7 @@ export default function ShoppingListManager() {
                   maxLength={10}
                   style={[
                     styles.shareInput,
+                    styles.shareInputRow,
                     {
                       color: c.text,
                       borderColor: surfaceBorder,
@@ -1470,13 +1782,13 @@ export default function ShoppingListManager() {
                   onPress={() => joinSharedList(shareCodeInput)}
                   disabled={!activeUid}
                   style={({ pressed }) => [
-                    styles.shareButtonSmall,
+                    styles.secondaryActionButton,
                     { borderColor: surfaceBorder },
                     pressed && { opacity: 0.7 },
                     !activeUid && { opacity: 0.5 },
                   ]}
                 >
-                  <Text style={[styles.shareButtonText, { color: c.text }]}>
+                  <Text style={[styles.secondaryActionText, { color: c.text }]}>
                     Join
                   </Text>
                 </Pressable>
@@ -1570,13 +1882,65 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 6,
   },
-  sectionTitleRow: {
+  listHeaderCard: {
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 16,
+    gap: 10,
+  },
+  listHeaderTop: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    justifyContent: "space-between",
+    gap: 12,
   },
-  settingsButton: {
-    padding: 4,
+  listHeaderTitle: {
+    fontSize: 22,
+    fontFamily: "Montserrat-SemiBold",
+  },
+  listHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  listHeaderMeta: {
+    fontSize: 11,
+    fontFamily: "Montserrat-Medium",
+  },
+  shareIconButton: {
+    borderWidth: 1,
+    borderRadius: 999,
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: -6,
+  },
+  avatarCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
+  inviteOutline: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  inviteText: {
+    fontSize: 11,
+    fontFamily: "Montserrat-SemiBold",
   },
   sectionTitle: {
     fontSize: 17,
@@ -1680,7 +2044,18 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 10,
   },
+  setupCreateCard: {
+    gap: 12,
+  },
+  setupJoinCard: {
+    gap: 12,
+  },
   renameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  sectionTitleRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
@@ -1713,6 +2088,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: "Montserrat-Regular",
   },
+  settingsSectionTitle: {
+    fontSize: 15,
+    fontFamily: "Montserrat-SemiBold",
+  },
+  settingsSectionSubtitle: {
+    fontSize: 12,
+    fontFamily: "Montserrat-Regular",
+  },
   shareLine: {
     fontSize: 12,
     fontFamily: "Montserrat-Regular",
@@ -1737,19 +2120,130 @@ const styles = StyleSheet.create({
     fontFamily: "Montserrat-SemiBold",
     textAlign: "right",
   },
+  memberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  memberAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.08)",
+  },
+  memberName: {
+    fontSize: 12,
+    fontFamily: "Montserrat-SemiBold",
+  },
+  memberRole: {
+    fontSize: 11,
+    fontFamily: "Montserrat-Regular",
+  },
+  shareMethodsCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  shareMethodRow: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  shareMethodText: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: "Montserrat-Medium",
+  },
+  shareMethodDivider: {
+    height: 1,
+    backgroundColor: "rgba(0,0,0,0.08)",
+  },
   shareJoinRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
   shareInput: {
-    flex: 1,
     borderWidth: 1,
     borderRadius: 10,
     paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 12,
+    paddingVertical: 0,
+    height: 40,
+    width: "100%",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlignVertical: "center",
     fontFamily: "Montserrat-Medium",
+  },
+  shareInputRow: {
+    flex: 1,
+    width: "auto",
+  },
+  primaryActionButton: {
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  primaryActionText: {
+    fontSize: 13,
+    fontFamily: "Montserrat-SemiBold",
+    color: "rgba(12,12,12,0.9)",
+  },
+  secondaryActionButton: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    backgroundColor: "transparent",
+  },
+  secondaryActionText: {
+    fontSize: 12,
+    fontFamily: "Montserrat-SemiBold",
+  },
+  dangerButton: {
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+    backgroundColor: "rgba(217,100,89,0.85)",
+  },
+  dangerButtonText: {
+    fontSize: 13,
+    fontFamily: "Montserrat-SemiBold",
+    color: "#fff",
+  },
+  dangerOutlineButton: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderColor: "rgba(217,100,89,0.6)",
+  },
+  dangerOutlineText: {
+    fontSize: 12,
+    fontFamily: "Montserrat-SemiBold",
+    color: "rgba(217,100,89,0.9)",
+  },
+  orDividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  orDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "rgba(0,0,0,0.08)",
+  },
+  orDividerText: {
+    fontSize: 11,
+    fontFamily: "Montserrat-SemiBold",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   shareButton: {
     borderWidth: 1,
