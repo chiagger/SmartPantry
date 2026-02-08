@@ -94,6 +94,8 @@ export default function ShoppingListManager() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [needsListSetup, setNeedsListSetup] = useState(false);
   const [listNameInput, setListNameInput] = useState("");
+  const [isRenamingListName, setIsRenamingListName] = useState(false);
+  const [pendingListName, setPendingListName] = useState("");
   const [copyHint, setCopyHint] = useState<"code" | "link" | null>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -379,9 +381,10 @@ export default function ShoppingListManager() {
 
   useEffect(() => {
     if (!activeListId) return;
+    if (isRenamingListName) return;
     const existingName = listMeta[activeListId]?.name ?? "";
-    setListNameInput(existingName);
-  }, [activeListId, listMeta]);
+    setPendingListName(existingName);
+  }, [activeListId, isRenamingListName, listMeta]);
 
   useEffect(() => {
     if (!copyHint) return;
@@ -641,6 +644,24 @@ export default function ShoppingListManager() {
       [activeListId]: { name, shared: prev[activeListId]?.shared },
     }));
     setNotice(null);
+  }
+
+  async function commitListName() {
+    if (!activeListId) {
+      setIsRenamingListName(false);
+      return;
+    }
+    const nextName = pendingListName.trim();
+    const currentName = listMeta[activeListId]?.name ?? "";
+    if (!nextName) {
+      setPendingListName(currentName);
+      setIsRenamingListName(false);
+      return;
+    }
+    if (nextName !== currentName) {
+      await renameActiveList(nextName);
+    }
+    setIsRenamingListName(false);
   }
 
   async function addToCurrent(match: Match, inputLabel?: string) {
@@ -1311,56 +1332,6 @@ export default function ShoppingListManager() {
               </Pressable>
             </View>
 
-            {activeListId ? (
-              <View
-                style={[
-                  styles.renameCard,
-                  {
-                    borderColor: surfaceBorder,
-                    backgroundColor: isDark
-                      ? "rgba(255,255,255,0.03)"
-                      : "rgba(0,0,0,0.04)",
-                  },
-                ]}
-              >
-                <Text style={[styles.shareTitle, { color: c.text }]}>
-                  List name
-                </Text>
-                <View style={styles.renameRow}>
-                  <TextInput
-                    value={listNameInput}
-                    onChangeText={setListNameInput}
-                    placeholder="List name"
-                    placeholderTextColor={sectionMetaColor}
-                    autoCorrect={false}
-                    maxLength={32}
-                    style={[
-                      styles.shareInput,
-                      styles.shareInputRow,
-                      {
-                        color: c.text,
-                        borderColor: surfaceBorder,
-                      },
-                    ]}
-                  />
-                  <Pressable
-                    onPress={() => renameActiveList(listNameInput)}
-                    disabled={!activeUid || !activeListId}
-                    style={({ pressed }) => [
-                      styles.shareButtonSmall,
-                      { borderColor: surfaceBorder },
-                      pressed && { opacity: 0.7 },
-                      (!activeUid || !activeListId) && { opacity: 0.5 },
-                    ]}
-                  >
-                    <Text style={[styles.shareButtonText, { color: c.text }]}>
-                      Save
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-            ) : null}
-
             <View
               style={[
                 styles.listPickerCard,
@@ -1418,6 +1389,49 @@ export default function ShoppingListManager() {
                 },
               ]}
             >
+              <View style={styles.renameInline}>
+                <Text style={[styles.settingsSectionTitle, { color: c.text }]}>
+                  List name
+                </Text>
+                <View style={styles.renameInputWrap}>
+                  <TextInput
+                    value={pendingListName}
+                    onChangeText={setPendingListName}
+                    onFocus={() => setIsRenamingListName(true)}
+                    onBlur={() => {
+                      setIsRenamingListName(false);
+                      void commitListName();
+                    }}
+                    onSubmitEditing={() => {
+                      void commitListName();
+                    }}
+                    placeholder="List name"
+                    placeholderTextColor={sectionMetaColor}
+                    autoCorrect={false}
+                    returnKeyType="done"
+                    style={[
+                      styles.renameInput,
+                      { color: c.text, borderColor: sectionMetaColor },
+                    ]}
+                  />
+                  {pendingListName.length ? (
+                    <Pressable
+                      onPress={() => setPendingListName("")}
+                      style={({ pressed }) => [
+                        styles.renameClear,
+                        pressed && { opacity: 0.7 },
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name="close-circle"
+                        size={16}
+                        color={sectionMetaColor}
+                      />
+                    </Pressable>
+                  ) : null}
+                </View>
+              </View>
+
               <Text style={[styles.settingsSectionTitle, { color: c.text }]}>
                 Sharing
               </Text>
@@ -2095,6 +2109,25 @@ const styles = StyleSheet.create({
   settingsSectionSubtitle: {
     fontSize: 12,
     fontFamily: "Montserrat-Regular",
+  },
+  renameInline: {
+    gap: 6,
+    marginBottom: 12,
+  },
+  renameInputWrap: {
+    position: "relative",
+  },
+  renameInput: {
+    fontSize: 15,
+    fontFamily: "Montserrat-SemiBold",
+    paddingVertical: 6,
+    paddingRight: 24,
+    borderBottomWidth: 1,
+  },
+  renameClear: {
+    position: "absolute",
+    right: 0,
+    top: 6,
   },
   shareLine: {
     fontSize: 12,
