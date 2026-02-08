@@ -1,11 +1,11 @@
-import { ThemedText } from "@/components/ThemedText";
-import { useTheme } from "@/context/ThemeContext";
+import colors from "@/constants/Colors";
 import { googleAuth } from "@/utils/auth/google";
 import { router } from "expo-router";
 import {
   Dimensions,
   Image,
   StyleSheet,
+  Text,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -13,7 +13,7 @@ import {
 const { width, height } = Dimensions.get("screen");
 
 export default function Welcome() {
-  const { colors: c } = useTheme();
+  const c = colors.dark;
   const styles = createStyles(c);
 
   return (
@@ -30,11 +30,11 @@ export default function Welcome() {
           style={styles.heroImage}
         />
         <View style={styles.heroBlock}>
-          <ThemedText style={styles.heroIntro}>Welcome to</ThemedText>
-          <ThemedText style={styles.heroTitle}>SmartPantry</ThemedText>
-          <ThemedText style={styles.heroSubtitle}>
+          <Text style={styles.heroIntro}>Welcome to</Text>
+          <Text style={styles.heroTitle}>SmartPantry</Text>
+          <Text style={styles.heroSubtitle}>
             Your AI-powered{"\n"}kitchen & groceries companion.
-          </ThemedText>
+          </Text>
         </View>
         <View style={styles.authCard}>
           <View style={[styles.section, { marginTop: 30 }]}>
@@ -42,25 +42,25 @@ export default function Welcome() {
               style={[styles.button, styles.primaryButton]}
               onPress={() => router.push("/login")}
             >
-              <ThemedText style={styles.primaryButtonText}>
+              <Text style={styles.primaryButtonText}>
                 Continue with email
-              </ThemedText>
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.button, styles.secondaryButton]}
               onPress={() => router.push("/register")}
             >
-              <ThemedText style={styles.secondaryButtonText}>
+              <Text style={styles.secondaryButtonText}>
                 Create account with email
-              </ThemedText>
+              </Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.section}>
             <View style={styles.dividerRow}>
               <View style={styles.dividerLine} />
-              <ThemedText style={styles.dividerText}>or</ThemedText>
+              <Text style={styles.dividerText}>or</Text>
               <View style={styles.dividerLine} />
             </View>
 
@@ -68,9 +68,9 @@ export default function Welcome() {
               style={[styles.button, styles.googleButton]}
               onPress={() => googleAuth()}
             >
-              <ThemedText style={styles.googleButtonText}>
+              <Text style={styles.googleButtonText}>
                 Continue with Google
-              </ThemedText>
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -103,6 +103,7 @@ function createStyles(c: { [key: string]: string }) {
     heroIntro: {
       fontSize: 24,
       fontFamily: "Montserrat-ExtraLight",
+      color: c.text,
     },
     heroTitle: {
       marginTop: -6,
@@ -111,12 +112,14 @@ function createStyles(c: { [key: string]: string }) {
       textShadowColor: "rgba(0,0,0,0.35)",
       textShadowOffset: { width: 2, height: 3 },
       textShadowRadius: 6,
+      color: c.text,
     },
     heroSubtitle: {
       textAlign: "center",
       fontFamily: "Montserrat-ExtraLight",
       opacity: 0.9,
       marginTop: 6,
+      color: c.text,
     },
     authCard: {
       width: "88%",
@@ -173,6 +176,7 @@ function createStyles(c: { [key: string]: string }) {
     dividerText: {
       opacity: 0.7,
       fontSize: 12,
+      color: c.text,
     },
     googleButton: {
       backgroundColor: "#fff",
