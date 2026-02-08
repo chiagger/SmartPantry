@@ -47,6 +47,13 @@ type Item = {
   label: string;
 };
 
+type ListMember = {
+  uid: string;
+  name?: string;
+  surname?: string;
+  email?: string;
+};
+
 function toItem(id: string, key: string, label?: string): Item {
   return { id, key, source: FOOD_ICON_INDEX[key], label: label ?? key };
 }
@@ -57,6 +64,19 @@ function normalizeLabel(input: string): string {
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function getMemberInitials(member: ListMember): string {
+  const first = member.name?.trim();
+  const last = member.surname?.trim();
+  const firstInitial = first?.[0] ?? "";
+  const lastInitial = last?.[0] ?? "";
+  const combined = `${firstInitial}${lastInitial}`.trim();
+  if (combined) {
+    return combined.toUpperCase();
+  }
+  const fallback = member.email?.trim()?.[0] ?? "?";
+  return fallback.toUpperCase();
 }
 
 const { height } = Dimensions.get("window");
@@ -92,7 +112,7 @@ export default function ShoppingListManager() {
   const [activeListId, setActiveListId] = useState<string | null>(null);
   const [listIds, setListIds] = useState<string[]>([]);
   const [listMeta, setListMeta] = useState<
-    Record<string, { name?: string; shared?: boolean }>
+    Record<string, { name?: string; shared?: boolean; createdBy?: string }>
   >({});
   const [shareCodeInput, setShareCodeInput] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -111,6 +131,7 @@ export default function ShoppingListManager() {
 
   const [notice, setNotice] = useState<string | null>(null);
   const [activeUid, setActiveUid] = useState<string | null>(null);
+  const [sharedMembers, setSharedMembers] = useState<ListMember[]>([]);
   const bounceAnim = useRef(new Animated.Value(0)).current;
   const [currentAtEnd, setCurrentAtEnd] = useState(false);
   const [pastAtEnd, setPastAtEnd] = useState(false);
@@ -132,6 +153,11 @@ export default function ShoppingListManager() {
     isSharedList && activeListId
       ? `smartpantry://join?code=${activeListId}`
       : "";
+  const displayedMembers = useMemo(
+    () => sharedMembers.slice(0, 3),
+    [sharedMembers],
+  );
+  const extraMembersCount = Math.max(0, sharedMembers.length - 3);
 
   const getItemsCollectionRef = useCallback(
     (uid: string) => {
@@ -367,18 +393,27 @@ export default function ShoppingListManager() {
         listIds.map(async (id) => {
           const snap = await getDoc(doc(db, "lists", id));
           const data = snap.data() as
-            | { name?: string; shared?: boolean }
+            | { name?: string; shared?: boolean; createdBy?: string }
             | undefined;
-          return { id, name: data?.name, shared: data?.shared };
+          return {
+            id,
+            name: data?.name,
+            shared: data?.shared,
+            createdBy: data?.createdBy,
+          };
         }),
       );
       if (cancelled) return;
-      const nextMeta: Record<string, { name?: string; shared?: boolean }> = {};
+      const nextMeta: Record<
+        string,
+        { name?: string; shared?: boolean; createdBy?: string }
+      > = {};
       for (const entry of results) {
-        if (entry.name || entry.shared !== undefined) {
+        if (entry.name || entry.shared !== undefined || entry.createdBy) {
           nextMeta[entry.id] = {
             name: entry.name,
             shared: entry.shared,
+            createdBy: entry.createdBy,
           };
         }
       }
@@ -389,6 +424,48 @@ export default function ShoppingListManager() {
       cancelled = true;
     };
   }, [activeUid, listIds]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMembers() {
+      if (!activeListId || !isSharedList) {
+        setSharedMembers([]);
+        return;
+      }
+      const usersRef = collection(db, "users");
+      const membersSnap = await getDocs(
+        query(usersRef, where("listIds", "array-contains", activeListId)),
+      );
+      if (cancelled) return;
+      const members = membersSnap.docs.map(
+        (docSnap: FirebaseFirestoreTypes.QueryDocumentSnapshot) => {
+          const data = docSnap.data() as {
+            name?: string;
+            surname?: string;
+            email?: string;
+          };
+          return {
+            uid: docSnap.id,
+            name: data.name,
+            surname: data.surname,
+            email: data.email,
+          };
+        },
+      );
+      if (activeUid) {
+        members.sort((a: ListMember, b: ListMember) => {
+          if (a.uid === activeUid) return -1;
+          if (b.uid === activeUid) return 1;
+          return 0;
+        });
+      }
+      setSharedMembers(members);
+    }
+    void loadMembers();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeListId, activeUid, isSharedList]);
 
   useEffect(() => {
     if (!activeListId) return;
@@ -502,7 +579,7 @@ export default function ShoppingListManager() {
           setListMeta((prev) => {
             const next = { ...prev };
             delete next[activeListId];
-            next[code] = { name: currentName, shared: true };
+            next[code] = { name: currentName, shared: true, createdBy: user.uid };
             return next;
           });
           setListNameInput("");
@@ -516,7 +593,11 @@ export default function ShoppingListManager() {
 
     const listRef = doc(db, "lists", activeListId);
     const existing = await getDoc(listRef);
-    const existingShared = existing.data()?.shared;
+    const existingData = existing.data() as
+      | { shared?: boolean; createdBy?: string }
+      | undefined;
+    const existingShared = existingData?.shared;
+    const createdBy = existingData?.createdBy ?? user.uid;
     if (existing.exists() && existingShared) {
       setNotice("This list is already shared.");
       return;
@@ -525,7 +606,7 @@ export default function ShoppingListManager() {
       listRef,
       {
         code: activeListId,
-        createdBy: user.uid,
+        createdBy,
         createdAt: serverTimestamp(),
         shared: true,
         name: currentName,
@@ -534,7 +615,7 @@ export default function ShoppingListManager() {
     );
     setListMeta((prev) => ({
       ...prev,
-      [activeListId]: { name: currentName, shared: true },
+      [activeListId]: { name: currentName, shared: true, createdBy },
     }));
     setNotice(null);
   }
@@ -559,11 +640,19 @@ export default function ShoppingListManager() {
       { activeListId: normalized, listIds: arrayUnion(normalized) },
       { merge: true },
     );
-    const listData = snap.data() as { name?: string; shared?: boolean };
-    if (listData?.name || listData?.shared !== undefined) {
+    const listData = snap.data() as {
+      name?: string;
+      shared?: boolean;
+      createdBy?: string;
+    };
+    if (listData?.name || listData?.shared !== undefined || listData?.createdBy) {
       setListMeta((prev) => ({
         ...prev,
-        [normalized]: { name: listData.name, shared: listData.shared },
+        [normalized]: {
+          name: listData.name,
+          shared: listData.shared,
+          createdBy: listData.createdBy,
+        },
       }));
     }
     setShareCodeInput("");
@@ -641,7 +730,10 @@ export default function ShoppingListManager() {
           },
           { merge: true },
         );
-        setListMeta((prev) => ({ ...prev, [code]: { name, shared: false } }));
+        setListMeta((prev) => ({
+          ...prev,
+          [code]: { name, shared: false, createdBy: user.uid },
+        }));
         setListNameInput("");
         setNotice(null);
         return;
@@ -659,7 +751,11 @@ export default function ShoppingListManager() {
     await setDoc(listRef, { name }, { merge: true });
     setListMeta((prev) => ({
       ...prev,
-      [activeListId]: { name, shared: prev[activeListId]?.shared },
+      [activeListId]: {
+        name,
+        shared: prev[activeListId]?.shared,
+        createdBy: prev[activeListId]?.createdBy,
+      },
     }));
     setNotice(null);
   }
@@ -976,42 +1072,101 @@ export default function ShoppingListManager() {
               {isSharedList ? (
                 <>
                   <View style={styles.avatarRow}>
-                    <View
-                      style={[
-                        styles.avatarCircle,
-                        { backgroundColor: "rgba(163,177,138,0.35)" },
-                      ]}
-                    >
-                      <MaterialCommunityIcons
-                        name="account"
-                        size={14}
-                        color={c.text}
-                      />
-                    </View>
-                    <View
-                      style={[
-                        styles.avatarCircle,
-                        { backgroundColor: "rgba(163,177,138,0.25)" },
-                      ]}
-                    >
-                      <MaterialCommunityIcons
-                        name="account"
-                        size={14}
-                        color={c.text}
-                      />
-                    </View>
-                    <View
-                      style={[
-                        styles.avatarCircle,
-                        { backgroundColor: "rgba(163,177,138,0.2)" },
-                      ]}
-                    >
-                      <MaterialCommunityIcons
-                        name="account"
-                        size={14}
-                        color={c.text}
-                      />
-                    </View>
+                    {displayedMembers.length ? (
+                      <>
+                        {displayedMembers.map((member, index) => {
+                          const tint = Math.max(0.18, 0.35 - index * 0.08);
+                          const isCurrentMember =
+                            activeUid && member.uid === activeUid;
+                          return (
+                            <View
+                              key={member.uid}
+                              style={[
+                                styles.avatarCircle,
+                                {
+                                  backgroundColor: isCurrentMember
+                                    ? isDark
+                                      ? "rgba(88,129,87,0.45)"
+                                      : "rgba(163,177,138,0.55)"
+                                    : `rgba(163,177,138,${tint})`,
+                                  borderColor: isCurrentMember
+                                    ? isDark
+                                      ? "rgba(88,129,87,0.9)"
+                                      : "rgba(88,129,87,0.7)"
+                                    : "rgba(255,255,255,0.2)",
+                                  borderWidth: isCurrentMember ? 1.5 : 1,
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.avatarInitials,
+                                  { color: c.text },
+                                ]}
+                              >
+                                {getMemberInitials(member)}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                        {extraMembersCount > 0 ? (
+                          <View
+                            style={[
+                              styles.avatarCircle,
+                              { backgroundColor: "rgba(163,177,138,0.18)" },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.avatarInitials,
+                                { color: c.text },
+                              ]}
+                            >
+                              +{extraMembersCount}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        <View
+                          style={[
+                            styles.avatarCircle,
+                            { backgroundColor: "rgba(163,177,138,0.35)" },
+                          ]}
+                        >
+                          <MaterialCommunityIcons
+                            name="account"
+                            size={14}
+                            color={c.text}
+                          />
+                        </View>
+                        <View
+                          style={[
+                            styles.avatarCircle,
+                            { backgroundColor: "rgba(163,177,138,0.25)" },
+                          ]}
+                        >
+                          <MaterialCommunityIcons
+                            name="account"
+                            size={14}
+                            color={c.text}
+                          />
+                        </View>
+                        <View
+                          style={[
+                            styles.avatarCircle,
+                            { backgroundColor: "rgba(163,177,138,0.2)" },
+                          ]}
+                        >
+                          <MaterialCommunityIcons
+                            name="account"
+                            size={14}
+                            color={c.text}
+                          />
+                        </View>
+                      </>
+                    )}
                   </View>
                   <Text
                     style={[styles.listHeaderMeta, { color: sectionMetaColor }]}
@@ -1490,32 +1645,83 @@ export default function ShoppingListManager() {
                   >
                     Currently shared with
                   </Text>
-                  <View style={styles.memberRow}>
-                    <View
-                      style={[
-                        styles.memberAvatar,
-                        { backgroundColor: "rgba(163,177,138,0.22)" },
-                      ]}
-                    >
-                      <MaterialCommunityIcons
-                        name="account"
-                        size={14}
-                        color={c.text}
-                      />
-                    </View>
-                    <Text style={[styles.memberName, { color: c.text }]}>
-                      You
-                    </Text>
-                    <Text
-                      style={[styles.memberRole, { color: sectionMetaColor }]}
-                    >
-                      Admin
-                    </Text>
-                    <MaterialCommunityIcons
-                      name="crown"
-                      size={12}
-                      color={sectionMetaColor}
-                    />
+                  <View style={styles.memberList}>
+                    {sharedMembers.length ? (
+                      sharedMembers.map((member, index) => {
+                        const isCurrentMember =
+                          activeUid && member.uid === activeUid;
+                        const isAdmin =
+                          listMeta[activeListId]?.createdBy === member.uid;
+                        const fullName = [member.name, member.surname]
+                          .filter(Boolean)
+                          .join(" ")
+                          .trim();
+                        const label = isCurrentMember
+                          ? "You"
+                          : fullName || member.email || "Member";
+                        const tint = Math.max(0.18, 0.35 - index * 0.08);
+                        return (
+                          <View key={member.uid} style={styles.memberRow}>
+                            <View
+                              style={[
+                                styles.avatarCircle,
+                                {
+                                  backgroundColor: isCurrentMember
+                                    ? isDark
+                                      ? "rgba(88,129,87,0.45)"
+                                      : "rgba(163,177,138,0.55)"
+                                    : `rgba(163,177,138,${tint})`,
+                                  borderColor: isCurrentMember
+                                    ? isDark
+                                      ? "rgba(88,129,87,0.9)"
+                                      : "rgba(88,129,87,0.7)"
+                                    : "rgba(255,255,255,0.2)",
+                                  borderWidth: isCurrentMember ? 1.5 : 1,
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.avatarInitials,
+                                  { color: c.text },
+                                ]}
+                              >
+                                {getMemberInitials(member)}
+                              </Text>
+                            </View>
+                            <Text style={[styles.memberName, { color: c.text }]}>
+                              {label}
+                            </Text>
+                            {isAdmin ? (
+                              <>
+                                <Text
+                                  style={[
+                                    styles.memberRole,
+                                    { color: sectionMetaColor },
+                                  ]}
+                                >
+                                  Admin
+                                </Text>
+                                <MaterialCommunityIcons
+                                  name="crown"
+                                  size={12}
+                                  color={sectionMetaColor}
+                                />
+                              </>
+                            ) : null}
+                          </View>
+                        );
+                      })
+                    ) : (
+                      <Text
+                        style={[
+                          styles.settingsSectionSubtitle,
+                          { color: sectionMetaColor },
+                        ]}
+                      >
+                        No members yet.
+                      </Text>
+                    )}
                   </View>
 
                   <Text
@@ -1979,7 +2185,7 @@ const styles = StyleSheet.create({
   avatarRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: -6,
+    gap: 2,
   },
   avatarCircle: {
     width: 28,
@@ -1989,6 +2195,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.2)",
+  },
+  avatarInitials: {
+    fontSize: 9,
+    fontFamily: "Montserrat-SemiBold",
   },
   inviteOutline: {
     borderWidth: 1,
@@ -2216,6 +2426,9 @@ const styles = StyleSheet.create({
   memberRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
+  },
+  memberList: {
     gap: 8,
   },
   memberAvatar: {
