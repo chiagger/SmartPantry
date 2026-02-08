@@ -1,12 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-  Image,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { useTheme } from "@/context/ThemeContext";
 import { FOOD_ICON_ALIASES } from "@/utils/foodIconAliases";
@@ -130,11 +123,7 @@ function scoreCandidate(queryTokens: string[], key: string): CandidateScore {
         strongHits += 1;
         continue;
       }
-      if (
-        k.length >= 3 &&
-        q.length >= 3 &&
-        (k.startsWith(q) || q.startsWith(k))
-      ) {
+      if (k.length >= 3 && q.length >= 3 && (k.startsWith(q) || q.startsWith(k))) {
         score += 2;
         continue;
       }
@@ -273,7 +262,7 @@ export default function FoodIconSearch({
         ]}
       >
         <TextInput
-          placeholder="Add item to list..."
+          placeholder="Search for a food item"
           placeholderTextColor={inputTheme.placeholder}
           value={query}
           onChangeText={setQuery}
