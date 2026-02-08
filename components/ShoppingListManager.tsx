@@ -11,6 +11,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 
@@ -109,8 +110,11 @@ export default function ShoppingListManager() {
   const [notice, setNotice] = useState<string | null>(null);
   const [activeUid, setActiveUid] = useState<string | null>(null);
   const bounceAnim = useRef(new Animated.Value(0)).current;
+  const { height: screenHeight } = useWindowDimensions();
   const [currentAtEnd, setCurrentAtEnd] = useState(false);
+  const [currentAtStart, setCurrentAtStart] = useState(true);
   const [pastAtEnd, setPastAtEnd] = useState(false);
+  const [pastAtStart, setPastAtStart] = useState(true);
   const [searchDockHeight, setSearchDockHeight] = useState(0);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const keyboardOffsetAnim = useRef(new Animated.Value(0)).current;
@@ -124,6 +128,7 @@ export default function ShoppingListManager() {
     outputRange: [1, 0.35],
     extrapolate: "clamp",
   });
+  const listCardMaxHeight = Math.max(180, Math.round(screenHeight * 0.25));
   const isSharedList = Boolean(activeListId && listMeta[activeListId]?.shared);
   const shareLink =
     isSharedList && activeListId
@@ -716,6 +721,9 @@ export default function ShoppingListManager() {
     });
   }
 
+  const showCurrentHint = currentList.length > 4 && !currentAtEnd;
+  const showPastHint = pastList.length > 4 && !pastAtEnd;
+
   async function movePastToCurrent(item: Item) {
     if (currentIds.has(item.id)) {
       setNotice(`"${item.label}" is already in your list`);
@@ -780,13 +788,13 @@ export default function ShoppingListManager() {
 
   function renderItem({
     item,
-    onPress,
+    onSwipe,
     onDelete,
     dimmed,
     showQuantity = true,
   }: {
     item: Item;
-    onPress: (i: Item) => void;
+    onSwipe: (i: Item) => void;
     onDelete?: (i: Item) => void;
     dimmed?: boolean;
     showQuantity?: boolean;
@@ -800,10 +808,7 @@ export default function ShoppingListManager() {
           dimmed && { opacity: dimmedOpacity },
         ]}
       >
-        <Pressable
-          onPress={() => onPress(item)}
-          style={({ pressed }) => [styles.rowMain, pressed && { opacity: 0.7 }]}
-        >
+        <View style={styles.rowMain}>
           <Image source={item.source} style={styles.rowIcon} />
           <Text
             style={[
@@ -813,7 +818,7 @@ export default function ShoppingListManager() {
           >
             {base}
           </Text>
-        </Pressable>
+        </View>
         {showQuantity ? (
           <View style={styles.qtyControlRow}>
             {qty > 1 ? (
@@ -902,7 +907,7 @@ export default function ShoppingListManager() {
         leftThreshold={0}
         onSwipeableWillOpen={(direction) => {
           if (direction === "left") {
-            onPress(item);
+            onSwipe(item);
           }
         }}
         renderLeftActions={() => <View style={styles.moveActionSpacer} />}
@@ -1053,7 +1058,11 @@ export default function ShoppingListManager() {
               style={[
                 styles.card,
                 styles.listCard,
-                { backgroundColor: surfaceCard, borderColor: surfaceBorder },
+                {
+                  backgroundColor: surfaceCard,
+                  borderColor: surfaceBorder,
+                  maxHeight: listCardMaxHeight,
+                },
               ]}
             >
               <FlatList
@@ -1063,7 +1072,7 @@ export default function ShoppingListManager() {
                 renderItem={({ item }) =>
                   renderItem({
                     item,
-                    onPress: moveToPast,
+                    onSwipe: moveToPast,
                     onDelete: async (i) => {
                       const user = auth.currentUser;
                       if (!user) return;
@@ -1076,32 +1085,41 @@ export default function ShoppingListManager() {
                     },
                   })
                 }
-                contentContainerStyle={styles.listContent}
+                contentContainerStyle={[
+                  styles.listContent,
+                  showCurrentHint && styles.listContentWithHint,
+                ]}
+                ListHeaderComponent={<View style={styles.listTopInset} />}
                 showsVerticalScrollIndicator
                 indicatorStyle="white"
+                nestedScrollEnabled
                 scrollEventThrottle={16}
                 onScroll={(e) => {
                   const { layoutMeasurement, contentOffset, contentSize } =
                     e.nativeEvent;
+                  const atStart = contentOffset.y <= 2;
                   const atEnd =
                     layoutMeasurement.height + contentOffset.y >=
                     contentSize.height - 4;
+                  setCurrentAtStart(atStart);
                   setCurrentAtEnd(atEnd);
                 }}
               />
               <View
                 pointerEvents="none"
-                style={[styles.fadeTop, { backgroundColor: fadeColor }]}
+                style={[
+                  styles.fadeBottom,
+                  {
+                    backgroundColor: fadeColor,
+                    bottom: showCurrentHint ? 32 : 0,
+                  },
+                ]}
               />
-              <View
-                pointerEvents="none"
-                style={[styles.fadeBottom, { backgroundColor: fadeColor }]}
-              />
-              {currentList.length > 4 && !currentAtEnd ? (
+              {showCurrentHint ? (
                 <Animated.View
                   pointerEvents="none"
                   style={[
-                    styles.scrollHintOverlay,
+                    styles.scrollHintFooter,
                     {
                       opacity: bounceAnim.interpolate({
                         inputRange: [0, 1],
@@ -1153,7 +1171,11 @@ export default function ShoppingListManager() {
               style={[
                 styles.card,
                 styles.listCard,
-                { backgroundColor: surfaceCard, borderColor: surfaceBorder },
+                {
+                  backgroundColor: surfaceCard,
+                  borderColor: surfaceBorder,
+                  maxHeight: listCardMaxHeight,
+                },
               ]}
             >
               <FlatList
@@ -1162,7 +1184,7 @@ export default function ShoppingListManager() {
                 renderItem={({ item }) =>
                   renderItem({
                     item,
-                    onPress: movePastToCurrent,
+                    onSwipe: movePastToCurrent,
                     dimmed: true,
                     showQuantity: false,
                     onDelete: async (i) => {
@@ -1177,32 +1199,38 @@ export default function ShoppingListManager() {
                     },
                   })
                 }
-                contentContainerStyle={styles.listContent}
+                contentContainerStyle={[
+                  styles.listContent,
+                  showPastHint && styles.listContentWithHint,
+                ]}
+                ListHeaderComponent={<View style={styles.listTopInset} />}
                 showsVerticalScrollIndicator
                 indicatorStyle="white"
+                nestedScrollEnabled
                 scrollEventThrottle={16}
                 onScroll={(e) => {
                   const { layoutMeasurement, contentOffset, contentSize } =
                     e.nativeEvent;
+                  const atStart = contentOffset.y <= 2;
                   const atEnd =
                     layoutMeasurement.height + contentOffset.y >=
                     contentSize.height - 4;
+                  setPastAtStart(atStart);
                   setPastAtEnd(atEnd);
                 }}
               />
               <View
                 pointerEvents="none"
-                style={[styles.fadeTop, { backgroundColor: fadeColor }]}
+                style={[
+                  styles.fadeBottom,
+                  { backgroundColor: fadeColor, bottom: showPastHint ? 32 : 0 },
+                ]}
               />
-              <View
-                pointerEvents="none"
-                style={[styles.fadeBottom, { backgroundColor: fadeColor }]}
-              />
-              {pastList.length > 4 && !pastAtEnd ? (
+              {showPastHint ? (
                 <Animated.View
                   pointerEvents="none"
                   style={[
-                    styles.scrollHintOverlay,
+                    styles.scrollHintFooter,
                     {
                       opacity: bounceAnim.interpolate({
                         inputRange: [0, 1],
@@ -1269,12 +1297,6 @@ export default function ShoppingListManager() {
               ]}
               onLayout={(e) => setSearchDockHeight(e.nativeEvent.layout.height)}
             >
-              <Text style={[styles.cardTitle, { color: c.text }]}>
-                Build your list
-              </Text>
-              <Text style={[styles.cardSubtitle, { color: subtitleColor }]}>
-                Search and add items to your current list.
-              </Text>
               {notice ? (
                 <Text
                   style={[styles.notice, { color: "rgba(217,100,89,0.85)" }]}
@@ -1649,8 +1671,9 @@ export default function ShoppingListManager() {
                       const itemsSnap = await getDocs(itemsRef);
                       await Promise.all(
                         itemsSnap.docs.map(
-                          (docSnap: FirebaseFirestoreTypes.QueryDocumentSnapshot) =>
-                            deleteDoc(docSnap.ref),
+                          (
+                            docSnap: FirebaseFirestoreTypes.QueryDocumentSnapshot,
+                          ) => deleteDoc(docSnap.ref),
                         ),
                       );
                       await deleteDoc(doc(db, "lists", activeListId));
@@ -1893,9 +1916,10 @@ const styles = StyleSheet.create({
     minHeight: 120,
     position: "relative",
     overflow: "hidden",
+    padding: 0,
   },
   cardTitle: {
-    fontSize: 22,
+    fontSize: 18,
     fontFamily: "Montserrat-SemiBold",
   },
   cardSubtitle: {
@@ -1985,6 +2009,15 @@ const styles = StyleSheet.create({
   },
   listContent: {
     gap: 10,
+    paddingHorizontal: 12,
+    paddingTop: 0,
+    paddingBottom: 12,
+  },
+  listTopInset: {
+    height: 12,
+  },
+  listContentWithHint: {
+    paddingBottom: 44,
   },
   fadeTop: {
     position: "absolute",
@@ -2000,7 +2033,7 @@ const styles = StyleSheet.create({
     right: 0,
     height: 16,
   },
-  scrollHintOverlay: {
+  scrollHintFooter: {
     position: "absolute",
     left: 12,
     right: 12,
