@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  Dimensions,
   Easing,
   FlatList,
   Image,
@@ -57,6 +58,8 @@ function normalizeLabel(input: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
+
+const { height } = Dimensions.get("window");
 
 export default function ShoppingListManager() {
   const { theme, colors: c } = useTheme();
@@ -1076,6 +1079,23 @@ export default function ShoppingListManager() {
                     },
                   })
                 }
+                ListEmptyComponent={
+                  <View style={styles.emptyState}>
+                    <MaterialCommunityIcons
+                      name="cart-outline"
+                      size={28}
+                      color={sectionMetaColor}
+                    />
+                    <Text style={[styles.emptyTitle, { color: c.text }]}>
+                      List empty
+                    </Text>
+                    <Text
+                      style={[styles.emptyText, { color: sectionMetaColor }]}
+                    >
+                      Add your first item below.
+                    </Text>
+                  </View>
+                }
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator
                 indicatorStyle="white"
@@ -1177,6 +1197,21 @@ export default function ShoppingListManager() {
                     },
                   })
                 }
+                ListEmptyComponent={
+                  <View style={styles.emptyState}>
+                    <MaterialCommunityIcons
+                      name="history"
+                      size={28}
+                      color={sectionMetaColor}
+                    />
+                    <Text style={[styles.emptyTitle, { color: c.text }]}>
+                      No previous items yet
+                    </Text>
+                    <Text style={[styles.emptyText, { color: sectionMetaColor }]}>
+                      Swipe right on groceries to send them here.
+                    </Text>
+                  </View>
+                }
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator
                 indicatorStyle="white"
@@ -1269,12 +1304,6 @@ export default function ShoppingListManager() {
               ]}
               onLayout={(e) => setSearchDockHeight(e.nativeEvent.layout.height)}
             >
-              <Text style={[styles.cardTitle, { color: c.text }]}>
-                Build your list
-              </Text>
-              <Text style={[styles.cardSubtitle, { color: subtitleColor }]}>
-                Search and add items to your current list.
-              </Text>
               {notice ? (
                 <Text
                   style={[styles.notice, { color: "rgba(217,100,89,0.85)" }]}
@@ -1649,8 +1678,9 @@ export default function ShoppingListManager() {
                       const itemsSnap = await getDocs(itemsRef);
                       await Promise.all(
                         itemsSnap.docs.map(
-                          (docSnap: FirebaseFirestoreTypes.QueryDocumentSnapshot) =>
-                            deleteDoc(docSnap.ref),
+                          (
+                            docSnap: FirebaseFirestoreTypes.QueryDocumentSnapshot,
+                          ) => deleteDoc(docSnap.ref),
                         ),
                       );
                       await deleteDoc(doc(db, "lists", activeListId));
@@ -1889,7 +1919,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.08)",
   },
   listCard: {
-    maxHeight: 250,
+    maxHeight: height * 0.25,
     minHeight: 120,
     position: "relative",
     overflow: "hidden",
@@ -1985,6 +2015,19 @@ const styles = StyleSheet.create({
   },
   listContent: {
     gap: 10,
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: 15,
+    gap: 6,
+  },
+  emptyTitle: {
+    fontSize: 14,
+    fontFamily: "Montserrat-SemiBold",
+  },
+  emptyText: {
+    fontSize: 12,
+    fontFamily: "Montserrat-Regular",
   },
   fadeTop: {
     position: "absolute",
