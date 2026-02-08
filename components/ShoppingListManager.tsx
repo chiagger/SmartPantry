@@ -83,6 +83,7 @@ export default function ShoppingListManager() {
 
   const currentListRef = useRef<FlatList<Item> | null>(null);
   const recentlyReaddedRef = useRef<Set<string>>(new Set());
+  const recentlyAddedRef = useRef<Set<string>>(new Set());
   const [currentList, setCurrentList] = useState<Item[]>([]);
   const [pastList, setPastList] = useState<Item[]>([]);
   const [activeListId, setActiveListId] = useState<string | null>(null);
@@ -281,6 +282,10 @@ export default function ShoppingListManager() {
                 a: { item: Item; updatedAt: number },
                 b: { item: Item; updatedAt: number },
               ) => {
+                const addedA = recentlyAddedRef.current.has(a.item.id);
+                const addedB = recentlyAddedRef.current.has(b.item.id);
+                if (addedA && !addedB) return -1;
+                if (addedB && !addedA) return 1;
                 const readdedA = recentlyReaddedRef.current.has(a.item.id);
                 const readdedB = recentlyReaddedRef.current.has(b.item.id);
                 if (readdedA && !readdedB) return -1;
@@ -297,6 +302,9 @@ export default function ShoppingListManager() {
             )
             .map((entry: { item: Item; updatedAt: number }) => entry.item);
           for (const entry of ordered) {
+            if (recentlyAddedRef.current.has(entry.id)) {
+              recentlyAddedRef.current.delete(entry.id);
+            }
             if (recentlyReaddedRef.current.has(entry.id)) {
               recentlyReaddedRef.current.delete(entry.id);
             }
@@ -683,6 +691,7 @@ export default function ShoppingListManager() {
       setNotice(`"${item.label}" is already in your list`);
       return;
     }
+    recentlyAddedRef.current.add(item.id);
 
     const user = auth.currentUser;
     if (!user) return;
