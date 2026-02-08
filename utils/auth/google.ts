@@ -22,7 +22,7 @@ export const googleAuth = async () => {
         await GoogleSignin.hasPlayServices();
 
         const user = await GoogleSignin.signIn();
-        console.log("ok")
+
         const idToken = user.data?.idToken;
 
         if (idToken) {

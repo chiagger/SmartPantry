@@ -387,6 +387,12 @@ export default function ShoppingListManager() {
   }, [activeListId, isRenamingListName, listMeta]);
 
   useEffect(() => {
+    if (needsListSetup) {
+      setSettingsOpen(false);
+    }
+  }, [needsListSetup]);
+
+  useEffect(() => {
     if (!copyHint) return;
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     copyTimerRef.current = setTimeout(() => {
@@ -556,6 +562,7 @@ export default function ShoppingListManager() {
   async function leaveSharedList() {
     const user = auth.currentUser;
     if (!user || !activeListId) return;
+    setSettingsOpen(false);
     const userRef = doc(db, "users", user.uid);
     const fallback = listIds.find((id) => id !== activeListId) ?? null;
     await setDoc(
@@ -1298,7 +1305,7 @@ export default function ShoppingListManager() {
 
       <Modal
         transparent
-        visible={settingsOpen}
+        visible={settingsOpen && !needsListSetup}
         animationType="fade"
         onRequestClose={() => setSettingsOpen(false)}
       >
@@ -1612,6 +1619,7 @@ export default function ShoppingListManager() {
                   <Pressable
                     onPress={async () => {
                       if (!activeUid || !activeListId) return;
+                      setSettingsOpen(false);
                       const userRef = doc(db, "users", activeUid);
                       const fallback =
                         listIds.find((id) => id !== activeListId) ?? null;
