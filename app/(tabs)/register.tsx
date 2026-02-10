@@ -19,7 +19,7 @@ import {
 const { width, height } = Dimensions.get("screen");
 
 export default function Register() {
-  const { colors: c } = useTheme();
+  const { colors: c, t } = useTheme();
   const styles = createStyles(c);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -35,14 +35,14 @@ export default function Register() {
   const [loading, setLoading] = useState<boolean>(false);
 
   const validatePassword = () => {
-    if (!password) return "Password is required";
-    if (password.length < 8) return "Password must be at least 8 characters";
+    if (!password) return t("validation_password_required");
+    if (password.length < 8) return t("validation_password_min_length");
     if (!/[A-Z]/.test(password))
-      return "Password must include an uppercase letter";
-    if (!/[0-9]/.test(password)) return "Password must include a number";
+      return t("validation_password_uppercase");
+    if (!/[0-9]/.test(password)) return t("validation_password_number");
     if (!/[^A-Za-z0-9]/.test(password))
-      return "Password must include a special character";
-    if (password !== confirmPassword) return "Passwords do not match";
+      return t("validation_password_special");
+    if (password !== confirmPassword) return t("validation_passwords_mismatch");
     return "";
   };
 
@@ -59,9 +59,9 @@ export default function Register() {
             router.replace("/");
           }}
         >
-          <ThemedText style={styles.backText}>Back</ThemedText>
+          <ThemedText style={styles.backText}>{t("common_back")}</ThemedText>
         </TouchableOpacity>
-        <ThemedText style={styles.headerTitle}>Create account</ThemedText>
+        <ThemedText style={styles.headerTitle}>{t("register_title")}</ThemedText>
         <View style={{ width: 40 }} />
       </View>
 
@@ -76,24 +76,22 @@ export default function Register() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.card}>
-            <ThemedText style={styles.cardTitle}>
-              Start your SmartPantry journey
-            </ThemedText>
+            <ThemedText style={styles.cardTitle}>{t("register_heading")}</ThemedText>
             <ThemedText style={styles.cardSubtitle}>
-              Fill in your details to register with email.
+              {t("register_subtitle")}
             </ThemedText>
 
             <View style={styles.form}>
               <View style={styles.row}>
                 <TextInput
-                  placeholder="Name"
+                  placeholder={t("common_name")}
                   placeholderTextColor="rgba(255,255,255,0.55)"
                   style={[styles.input, styles.inputHalf]}
                   value={name}
                   onChangeText={setName}
                 />
                 <TextInput
-                  placeholder="Surname"
+                  placeholder={t("common_surname")}
                   placeholderTextColor="rgba(255,255,255,0.55)"
                   style={[styles.input, styles.inputHalf]}
                   value={surname}
@@ -101,14 +99,14 @@ export default function Register() {
                 />
               </View>
               <TextInput
-                placeholder="Date of birth (MM/DD/YYYY)"
+                placeholder={t("register_date_of_birth")}
                 placeholderTextColor="rgba(255,255,255,0.55)"
                 style={styles.input}
                 value={dateOfBirth}
                 onChangeText={setDateOfBirth}
               />
               <TextInput
-                placeholder="Email"
+                placeholder={t("common_email")}
                 placeholderTextColor="rgba(255,255,255,0.55)"
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -118,7 +116,7 @@ export default function Register() {
               />
               <View style={styles.inputWithIcon}>
                 <TextInput
-                  placeholder="Password"
+                  placeholder={t("common_password")}
                   placeholderTextColor="rgba(255,255,255,0.55)"
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
@@ -140,7 +138,7 @@ export default function Register() {
               </View>
               <View style={styles.inputWithIcon}>
                 <TextInput
-                  placeholder="Confirm password"
+                  placeholder={t("register_confirm_password")}
                   placeholderTextColor="rgba(255,255,255,0.55)"
                   secureTextEntry={!showConfirmPassword}
                   autoCapitalize="none"
@@ -183,6 +181,7 @@ export default function Register() {
                   email,
                   password,
                   setErrorMessage,
+                  t,
                 ).then(() => {
                   setLoading(false);
                   if (errorMessage === "") {
@@ -193,7 +192,7 @@ export default function Register() {
               disabled={loading}
             >
               <ThemedText style={styles.primaryButtonText}>
-                {loading ? "Creating..." : "Create account"}
+                {loading ? t("register_creating") : t("register_create_account")}
               </ThemedText>
             </TouchableOpacity>
           </View>

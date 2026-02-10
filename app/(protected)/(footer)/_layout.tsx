@@ -1,20 +1,21 @@
 import { Tabs } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useTheme } from "@/context/ThemeContext";
+import type { TranslationKey } from "@/constants/i18n";
 
 type TabConfig = {
   name: string;
-  title: string;
+  titleKey: TranslationKey;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
 };
 
 const tabs: TabConfig[] = [
-  { name: "home", title: "Home", icon: "home-variant" },
-  { name: "settings", title: "Settings", icon: "cog" },
+  { name: "home", titleKey: "tabs_home", icon: "home-variant" },
+  { name: "settings", titleKey: "tabs_settings", icon: "cog" },
 ];
 
 export default function ProtectedTabsLayout() {
-  const { theme, colors: c } = useTheme();
+  const { theme, colors: c, t } = useTheme();
   const isDark = theme === "dark";
 
   return (
@@ -36,7 +37,7 @@ export default function ProtectedTabsLayout() {
           key={tab.name}
           name={tab.name}
           options={{
-            title: tab.title,
+            title: t(tab.titleKey),
             tabBarIcon: ({ color, size }) => (
               <MaterialCommunityIcons
                 name={tab.icon}

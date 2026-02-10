@@ -82,7 +82,7 @@ function getMemberInitials(member: ListMember): string {
 const { height } = Dimensions.get("window");
 
 export default function ShoppingListManager() {
-  const { theme, colors: c } = useTheme();
+  const { theme, colors: c, t } = useTheme();
   const isDark = theme === "dark";
   const surfaceCard = isDark ? "rgba(18,18,18,0.88)" : "rgba(255,255,255,0.96)";
   const surfaceHero = isDark ? "rgba(16,16,16,0.92)" : "rgba(255,255,255,0.98)";
@@ -176,10 +176,10 @@ export default function ShoppingListManager() {
     (id: string) => {
       const name = listMeta[id]?.name;
       if (name) return name;
-      if (id.startsWith("user:")) return "My List";
-      return `Shared: ${id}`;
+      if (id.startsWith("user:")) return t("list_my_list");
+      return t("list_shared_with_id", { id });
     },
-    [listMeta],
+    [listMeta, t],
   );
 
   const animateKeyboard = useCallback(
@@ -342,7 +342,11 @@ export default function ShoppingListManager() {
         });
       },
       (error) => {
-        setNotice(`Current list error: ${error.message}`);
+        setNotice(
+          t("list_current_error", {
+            message: error.message,
+          }),
+        );
       },
     );
 
@@ -372,7 +376,11 @@ export default function ShoppingListManager() {
         setPastList(next);
       },
       (error) => {
-        setNotice(`Past list error: ${error.message}`);
+        setNotice(
+          t("list_past_error", {
+            message: error.message,
+          }),
+        );
       },
     );
 
@@ -380,7 +388,7 @@ export default function ShoppingListManager() {
       unsubCurrent();
       unsubPast();
     };
-  }, [activeUid, activeListId, getItemsCollectionRef]);
+  }, [activeUid, activeListId, getItemsCollectionRef, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -528,7 +536,9 @@ export default function ShoppingListManager() {
     if (!activeListId) return;
 
     const currentName =
-      listMeta[activeListId]?.name || listNameInput.trim() || "Shared List";
+      listMeta[activeListId]?.name ||
+      listNameInput.trim() ||
+      t("list_shared_default_name");
 
     if (activeListId.startsWith("user:")) {
       let code = "";
@@ -587,7 +597,7 @@ export default function ShoppingListManager() {
           return;
         }
       }
-      setNotice("Could not create a unique invite code. Try again.");
+      setNotice(t("list_notice_unique_code"));
       return;
     }
 
@@ -599,7 +609,7 @@ export default function ShoppingListManager() {
     const existingShared = existingData?.shared;
     const createdBy = existingData?.createdBy ?? user.uid;
     if (existing.exists() && existingShared) {
-      setNotice("This list is already shared.");
+      setNotice(t("list_notice_already_shared"));
       return;
     }
     await setDoc(
@@ -625,13 +635,13 @@ export default function ShoppingListManager() {
     if (!user) return;
     const normalized = rawCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
     if (!normalized) {
-      setNotice("Enter a valid invite code.");
+      setNotice(t("list_notice_enter_valid_invite"));
       return;
     }
     const listRef = doc(db, "lists", normalized);
     const snap = await getDoc(listRef);
     if (!snap.exists()) {
-      setNotice("Invite code not found.");
+      setNotice(t("list_notice_invite_not_found"));
       return;
     }
     const userRef = doc(db, "users", user.uid);
@@ -704,7 +714,7 @@ export default function ShoppingListManager() {
     const user = auth.currentUser;
     if (!user) return;
     const userRef = doc(db, "users", user.uid);
-    const name = listNameInput.trim() || "My List";
+    const name = listNameInput.trim() || t("list_setup_default_list_name");
     let code = "";
     for (let attempt = 0; attempt < 5; attempt += 1) {
       code = generateInviteCode(6);
@@ -739,7 +749,7 @@ export default function ShoppingListManager() {
         return;
       }
     }
-    setNotice("Could not create a unique invite code. Try again.");
+    setNotice(t("list_notice_unique_code"));
   }
 
   async function renameActiveList(nextName: string) {
@@ -787,7 +797,7 @@ export default function ShoppingListManager() {
     };
     if (!item.label || !item.id) return;
     if (currentIds.has(item.id)) {
-      setNotice(`"${item.label}" is already in your list`);
+      setNotice(t("list_notice_item_already_exists", { label: item.label }));
       return;
     }
     recentlyAddedRef.current.add(item.id);
@@ -817,7 +827,7 @@ export default function ShoppingListManager() {
 
   async function movePastToCurrent(item: Item) {
     if (currentIds.has(item.id)) {
-      setNotice(`"${item.label}" is already in your list`);
+      setNotice(t("list_notice_item_already_exists", { label: item.label }));
       return;
     }
     recentlyReaddedRef.current.add(item.id);
@@ -1049,7 +1059,7 @@ export default function ShoppingListManager() {
           >
             <View style={styles.listHeaderTop}>
               <Text style={[styles.listHeaderTitle, { color: c.text }]}>
-                {activeListId ? getListLabel(activeListId) : "Your Lists"}
+                {activeListId ? getListLabel(activeListId) : t("list_title_your_lists")}
               </Text>
               <Pressable
                 onPress={() => setSettingsOpen(true)}
@@ -1059,7 +1069,7 @@ export default function ShoppingListManager() {
                   pressed && { opacity: 0.7 },
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel="List settings"
+                accessibilityLabel={t("list_accessibility_settings")}
               >
                 <MaterialCommunityIcons
                   name="cog-outline"
@@ -1171,7 +1181,7 @@ export default function ShoppingListManager() {
                   <Text
                     style={[styles.listHeaderMeta, { color: sectionMetaColor }]}
                   >
-                    Shared list
+                    {t("list_header_shared_list")}
                   </Text>
                 </>
               ) : (
@@ -1191,7 +1201,7 @@ export default function ShoppingListManager() {
                   <Text
                     style={[styles.inviteText, { color: sectionMetaColor }]}
                   >
-                    Invite friend
+                    {t("list_header_invite_friend")}
                   </Text>
                 </Pressable>
               )}
@@ -1201,10 +1211,10 @@ export default function ShoppingListManager() {
           <View style={styles.listSection}>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: c.text }]}>
-                Groceries List
+                {t("list_section_groceries")}
               </Text>
               <Text style={[styles.sectionMeta, { color: sectionMetaColor }]}>
-                Swipe right if bought
+                {t("list_section_groceries_meta")}
               </Text>
             </View>
             <View
@@ -1242,12 +1252,12 @@ export default function ShoppingListManager() {
                       color={sectionMetaColor}
                     />
                     <Text style={[styles.emptyTitle, { color: c.text }]}>
-                      List empty
+                      {t("list_empty_title")}
                     </Text>
                     <Text
                       style={[styles.emptyText, { color: sectionMetaColor }]}
                     >
-                      Add your first item below.
+                      {t("list_empty_subtitle")}
                     </Text>
                   </View>
                 }
@@ -1307,7 +1317,7 @@ export default function ShoppingListManager() {
                         { color: scrollTextColor },
                       ]}
                     >
-                      Scroll
+                      {t("list_scroll")}
                     </Text>
                   </View>
                 </Animated.View>
@@ -1318,10 +1328,10 @@ export default function ShoppingListManager() {
           <View style={styles.listSection}>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: c.text }]}>
-                Previous Items
+                {t("list_section_previous")}
               </Text>
               <Text style={[styles.sectionMeta, { color: sectionMetaColor }]}>
-                Swipe right to re-add
+                {t("list_section_previous_meta")}
               </Text>
             </View>
             <View
@@ -1360,10 +1370,10 @@ export default function ShoppingListManager() {
                       color={sectionMetaColor}
                     />
                     <Text style={[styles.emptyTitle, { color: c.text }]}>
-                      No previous items yet
+                      {t("list_previous_empty_title")}
                     </Text>
                     <Text style={[styles.emptyText, { color: sectionMetaColor }]}>
-                      Swipe right on groceries to send them here.
+                      {t("list_previous_empty_subtitle")}
                     </Text>
                   </View>
                 }
@@ -1423,7 +1433,7 @@ export default function ShoppingListManager() {
                         { color: scrollTextColor },
                       ]}
                     >
-                      Scroll
+                      {t("list_scroll")}
                     </Text>
                   </View>
                 </Animated.View>
@@ -1470,7 +1480,7 @@ export default function ShoppingListManager() {
                 <Text
                   style={[styles.notice, { color: "rgba(217,100,89,0.85)" }]}
                 >
-                  Not signed in. Lists won’t load.
+                  {t("list_notice_not_signed_in")}
                 </Text>
               ) : null}
               <FoodIconSearch
@@ -1515,7 +1525,7 @@ export default function ShoppingListManager() {
           >
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: c.text }]}>
-                List settings
+                {t("list_modal_settings_title")}
               </Text>
               <Pressable
                 onPress={() => setSettingsOpen(false)}
@@ -1544,7 +1554,7 @@ export default function ShoppingListManager() {
               ]}
             >
               <Text style={[styles.shareTitle, { color: c.text }]}>
-                Your lists
+                {t("list_modal_your_lists")}
               </Text>
               <View style={styles.listPickerWrap}>
                 {listIds.map((id) => {
@@ -1591,7 +1601,7 @@ export default function ShoppingListManager() {
             >
               <View style={styles.renameInline}>
                 <Text style={[styles.settingsSectionTitle, { color: c.text }]}>
-                  List name
+                  {t("list_modal_list_name")}
                 </Text>
                 <View style={styles.renameInputWrap}>
                   <TextInput
@@ -1605,7 +1615,7 @@ export default function ShoppingListManager() {
                     onSubmitEditing={() => {
                       void commitListName();
                     }}
-                    placeholder="List name"
+                    placeholder={t("list_modal_list_name")}
                     placeholderTextColor={sectionMetaColor}
                     autoCorrect={false}
                     returnKeyType="done"
@@ -1633,7 +1643,7 @@ export default function ShoppingListManager() {
               </View>
 
               <Text style={[styles.settingsSectionTitle, { color: c.text }]}>
-                Sharing
+                {t("list_modal_sharing")}
               </Text>
               {isSharedList && activeListId ? (
                 <>
@@ -1643,7 +1653,7 @@ export default function ShoppingListManager() {
                       { color: sectionMetaColor },
                     ]}
                   >
-                    Currently shared with
+                    {t("list_modal_currently_shared_with")}
                   </Text>
                   <View style={styles.memberList}>
                     {sharedMembers.length ? (
@@ -1657,8 +1667,8 @@ export default function ShoppingListManager() {
                           .join(" ")
                           .trim();
                         const label = isCurrentMember
-                          ? "You"
-                          : fullName || member.email || "Member";
+                          ? t("list_member_you")
+                          : fullName || member.email || t("list_member_generic");
                         const tint = Math.max(0.18, 0.35 - index * 0.08);
                         return (
                           <View key={member.uid} style={styles.memberRow}>
@@ -1700,7 +1710,7 @@ export default function ShoppingListManager() {
                                     { color: sectionMetaColor },
                                   ]}
                                 >
-                                  Admin
+                                  {t("list_member_admin")}
                                 </Text>
                                 <MaterialCommunityIcons
                                   name="crown"
@@ -1719,7 +1729,7 @@ export default function ShoppingListManager() {
                           { color: sectionMetaColor },
                         ]}
                       >
-                        No members yet.
+                        {t("list_members_none")}
                       </Text>
                     )}
                   </View>
@@ -1730,7 +1740,7 @@ export default function ShoppingListManager() {
                       { color: sectionMetaColor },
                     ]}
                   >
-                    Share methods
+                    {t("list_share_methods")}
                   </Text>
                   <View
                     style={[
@@ -1766,7 +1776,7 @@ export default function ShoppingListManager() {
                         ]}
                         numberOfLines={1}
                       >
-                        Invite link
+                        {t("list_share_invite_link")}
                       </Text>
                       <MaterialCommunityIcons
                         name="content-copy"
@@ -1805,7 +1815,7 @@ export default function ShoppingListManager() {
                           { color: subtitleColor },
                         ]}
                       >
-                        Invite code: {activeListId}
+                        {t("list_share_invite_code", { code: activeListId })}
                       </Text>
                       <MaterialCommunityIcons
                         name="content-copy"
@@ -1818,7 +1828,9 @@ export default function ShoppingListManager() {
                     <Text
                       style={[styles.copyHint, { color: sectionMetaColor }]}
                     >
-                      {copyHint === "code" ? "Code copied" : "Link copied"}
+                      {copyHint === "code"
+                        ? t("list_copy_code")
+                        : t("list_copy_link")}
                     </Text>
                   ) : null}
                   <Pressable
@@ -1830,7 +1842,7 @@ export default function ShoppingListManager() {
                       (!activeUid || !activeListId) && { opacity: 0.5 },
                     ]}
                   >
-                    <Text style={styles.dangerButtonText}>Leave list</Text>
+                    <Text style={styles.dangerButtonText}>{t("list_leave_list")}</Text>
                   </Pressable>
                 </>
               ) : (
@@ -1841,7 +1853,7 @@ export default function ShoppingListManager() {
                       { color: sectionMetaColor },
                     ]}
                   >
-                    This list is private.
+                    {t("list_private")}
                   </Text>
 
                   <Pressable
@@ -1857,7 +1869,7 @@ export default function ShoppingListManager() {
                     <Text
                       style={[styles.secondaryActionText, { color: c.text }]}
                     >
-                      Make shareable
+                      {t("list_make_shareable")}
                     </Text>
                   </Pressable>
                   <Pressable
@@ -1899,7 +1911,9 @@ export default function ShoppingListManager() {
                       (!activeUid || !activeListId) && { opacity: 0.5 },
                     ]}
                   >
-                    <Text style={styles.dangerOutlineText}>Delete list</Text>
+                    <Text style={styles.dangerOutlineText}>
+                      {t("list_delete_list")}
+                    </Text>
                   </Pressable>
                 </>
               )}
@@ -1922,10 +1936,10 @@ export default function ShoppingListManager() {
             ]}
           >
             <Text style={[styles.modalTitle, { color: c.text }]}>
-              Create or join a list
+              {t("list_setup_title")}
             </Text>
             <Text style={[styles.shareLine, { color: subtitleColor }]}>
-              You need a list before you can add items.
+              {t("list_setup_subtitle")}
             </Text>
 
             <View
@@ -1947,13 +1961,13 @@ export default function ShoppingListManager() {
                   color={sectionMetaColor}
                 />
                 <Text style={[styles.shareTitle, { color: c.text }]}>
-                  New list name
+                  {t("list_setup_new_list_name")}
                 </Text>
               </View>
               <TextInput
                 value={listNameInput}
                 onChangeText={setListNameInput}
-                placeholder="My List"
+                placeholder={t("list_setup_default_list_name")}
                 placeholderTextColor={sectionMetaColor}
                 autoCorrect={false}
                 maxLength={32}
@@ -1975,7 +1989,7 @@ export default function ShoppingListManager() {
                   !activeUid && { opacity: 0.5 },
                 ]}
               >
-                <Text style={styles.primaryActionText}>Create list</Text>
+                <Text style={styles.primaryActionText}>{t("list_setup_create_list")}</Text>
               </Pressable>
             </View>
 
@@ -1991,7 +2005,7 @@ export default function ShoppingListManager() {
                 ]}
               />
               <Text style={[styles.orDividerText, { color: sectionMetaColor }]}>
-                or
+                {t("common_or")}
               </Text>
               <View
                 style={[
@@ -2024,14 +2038,14 @@ export default function ShoppingListManager() {
                   color={sectionMetaColor}
                 />
                 <Text style={[styles.shareTitle, { color: c.text }]}>
-                  Join with code
+                  {t("list_setup_join_with_code")}
                 </Text>
               </View>
               <View style={styles.shareJoinRow}>
                 <TextInput
                   value={shareCodeInput}
                   onChangeText={setShareCodeInput}
-                  placeholder="Invite code"
+                  placeholder={t("list_setup_invite_code")}
                   placeholderTextColor={sectionMetaColor}
                   autoCapitalize="characters"
                   autoCorrect={false}
@@ -2056,7 +2070,7 @@ export default function ShoppingListManager() {
                   ]}
                 >
                   <Text style={[styles.secondaryActionText, { color: c.text }]}>
-                    Join
+                    {t("list_setup_join")}
                   </Text>
                 </Pressable>
               </View>

@@ -8,8 +8,10 @@ import {
   View,
 } from "react-native";
 
+import type { AppLanguage } from "@/constants/i18n";
 import { useTheme } from "@/context/ThemeContext";
 import { FOOD_ICON_ALIASES } from "@/utils/foodIconAliases";
+import { FOOD_ICON_ALIASES_IT } from "@/utils/foodIconAliasesIt";
 import { FOOD_ICON_INDEX } from "@/utils/foodIconIndex";
 
 export type Match = {
@@ -51,6 +53,11 @@ const SYNONYMS: Record<string, string[]> = {
   mince: ["ground"],
 };
 
+const ITALIAN_EQUIVALENTS: Record<string, string[]> = {
+  uovo: ["uova"],
+  uova: ["uovo"],
+};
+
 function stemToken(token: string): string {
   if (token.length <= 3) return token;
   if (token.endsWith("ies")) return `${token.slice(0, -3)}y`;
@@ -59,9 +66,16 @@ function stemToken(token: string): string {
   return token;
 }
 
+function stripDiacritics(input: string): string {
+  return input.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
 function tokenize(input: string): string[] {
   return input
     .toLowerCase()
+    .replace(/’|`/g, "'")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9\s-]/g, " ")
     .split(/[\s-]+/)
     .filter(Boolean)
@@ -69,16 +83,23 @@ function tokenize(input: string): string[] {
 }
 
 function normalize(input: string): string[] {
-  return tokenize(input);
+  return tokenize(stripDiacritics(input));
 }
 
-function expandTokens(tokens: string[]): string[] {
+function expandTokens(tokens: string[], language: AppLanguage): string[] {
   const out = new Set<string>();
   for (const token of tokens) {
     out.add(token);
-    const alias = SYNONYMS[token];
-    if (alias) {
-      for (const a of alias) out.add(stemToken(a));
+    if (language === "en") {
+      const alias = SYNONYMS[token];
+      if (alias) {
+        for (const a of alias) out.add(stemToken(a));
+      }
+    } else if (language === "it") {
+      const equivalents = ITALIAN_EQUIVALENTS[token];
+      if (equivalents) {
+        for (const equivalent of equivalents) out.add(stemToken(equivalent));
+      }
     }
   }
   return Array.from(out);
@@ -110,17 +131,56 @@ type CandidateScore = {
   strongHits: number;
 };
 
-function scoreCandidate(queryTokens: string[], key: string): CandidateScore {
+function scoreCandidate(
+  queryTokens: string[],
+  key: string,
+  language: AppLanguage
+): CandidateScore {
   if (!queryTokens.length) return { score: 0, strongHits: 0 };
-  const aliasTokens = FOOD_ICON_ALIASES[key] ?? [];
-  const keyTokens = [
-    ...key.split("-").map((t) => stemToken(t)),
-    ...aliasTokens.flatMap((t) => tokenize(t)),
-  ].filter((t) => t.length > 1);
-  const expanded = expandTokens(queryTokens);
+  const aliasTokens =
+    language === "it"
+      ? (FOOD_ICON_ALIASES_IT[key] ?? [])
+      : [...(FOOD_ICON_ALIASES[key] ?? []), ...(FOOD_ICON_ALIASES_IT[key] ?? [])];
+  const aliasTokenLists = aliasTokens
+    .map((alias) => tokenize(alias))
+    .filter((parts) => parts.length > 0);
+
+  const keyTokens = new Set<string>();
+  if (language === "en") {
+    for (const token of key.split("-").map((t) => stemToken(t))) {
+      if (token.length > 1) {
+        keyTokens.add(token);
+      }
+    }
+  }
+  for (const aliasParts of aliasTokenLists) {
+    for (const token of aliasParts) {
+      if (token.length > 1) {
+        keyTokens.add(token);
+      }
+    }
+  }
+
+  const expanded = expandTokens(queryTokens, language);
+  const normalizedQuery = queryTokens.join("-");
 
   let score = 0;
   let strongHits = 0;
+
+  const hasExactAlias = aliasTokenLists.some(
+    (parts) => parts.join("-") === normalizedQuery
+  );
+  if (hasExactAlias) {
+    score += 12;
+    strongHits += 2;
+  } else if (
+    queryTokens.length === 1 &&
+    aliasTokenLists.some((parts) => parts[0] === queryTokens[0])
+  ) {
+    // Prefer icons whose localized alias starts with the searched noun.
+    score += 3;
+    strongHits += 1;
+  }
 
   for (const q of expanded) {
     if (q.length < 2) continue;
@@ -157,25 +217,27 @@ function scoreCandidate(queryTokens: string[], key: string): CandidateScore {
   return { score, strongHits };
 }
 
-function findBestMatch(input: string): Match {
+function findBestMatch(input: string, language: AppLanguage): Match {
   const queryTokens = normalize(input);
   if (!queryTokens.length) {
     return { key: DEFAULT_ICON, source: FOOD_ICON_INDEX[DEFAULT_ICON] };
   }
   const directKey = queryTokens.join("-");
-  const aliasKey = DIRECT_ALIASES[directKey];
-  if (aliasKey && FOOD_ICON_INDEX[aliasKey]) {
-    return { key: aliasKey, source: FOOD_ICON_INDEX[aliasKey] };
-  }
-  if (directKey && FOOD_ICON_INDEX[directKey]) {
-    return { key: directKey, source: FOOD_ICON_INDEX[directKey] };
+  if (language === "en") {
+    const aliasKey = DIRECT_ALIASES[directKey];
+    if (aliasKey && FOOD_ICON_INDEX[aliasKey]) {
+      return { key: aliasKey, source: FOOD_ICON_INDEX[aliasKey] };
+    }
+    if (directKey && FOOD_ICON_INDEX[directKey]) {
+      return { key: directKey, source: FOOD_ICON_INDEX[directKey] };
+    }
   }
   let bestKey = DEFAULT_ICON;
   let bestScore = -1;
   let bestStrongHits = 0;
 
   for (const key of ICON_KEYS) {
-    const { score, strongHits } = scoreCandidate(queryTokens, key);
+    const { score, strongHits } = scoreCandidate(queryTokens, key, language);
     if (score > bestScore) {
       bestScore = score;
       bestStrongHits = strongHits;
@@ -216,7 +278,7 @@ export default function FoodIconSearch({
   onFocus,
   onBlur,
 }: FoodIconSearchProps) {
-  const { colors: c } = useTheme();
+  const { colors: c, t, language } = useTheme();
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [quantity, setQuantity] = useState(1);
@@ -243,7 +305,10 @@ export default function FoodIconSearch({
             placeholder: c.icon,
           };
 
-  const match = useMemo(() => findBestMatch(submittedQuery), [submittedQuery]);
+  const match = useMemo(
+    () => findBestMatch(submittedQuery, language),
+    [submittedQuery, language]
+  );
   const isLight = variant === "light";
   const qtyTheme = {
     backgroundColor: isLight ? "#ffffff" : "rgba(0,0,0,0.25)",
@@ -256,7 +321,7 @@ export default function FoodIconSearch({
     if (!baseLabel) return;
     const nextLabel = quantity > 1 ? `${baseLabel} x${quantity}` : baseLabel;
     setSubmittedQuery(baseLabel);
-    onSubmit(findBestMatch(baseLabel), nextLabel);
+    onSubmit(findBestMatch(baseLabel, language), nextLabel);
     setQuery("");
     setQuantity(1);
   };
@@ -273,7 +338,7 @@ export default function FoodIconSearch({
         ]}
       >
         <TextInput
-          placeholder="Add item to list..."
+          placeholder={t("food_search_placeholder")}
           placeholderTextColor={inputTheme.placeholder}
           value={query}
           onChangeText={setQuery}
@@ -299,7 +364,7 @@ export default function FoodIconSearch({
           <Pressable
             onPress={() => setQuery("")}
             accessibilityRole="button"
-            accessibilityLabel="Clear search"
+            accessibilityLabel={t("food_search_clear_search")}
             style={({ pressed }) => [
               styles.clearButton,
               pressed && { opacity: 0.7 },

@@ -19,7 +19,7 @@ import {
 const { width, height } = Dimensions.get("screen");
 
 export default function Login() {
-  const { colors: c } = useTheme();
+  const { colors: c, t } = useTheme();
   const styles = createStyles(c);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -42,9 +42,9 @@ export default function Login() {
             router.replace("/");
           }}
         >
-          <ThemedText style={styles.backText}>Back</ThemedText>
+          <ThemedText style={styles.backText}>{t("common_back")}</ThemedText>
         </TouchableOpacity>
-        <ThemedText style={styles.headerTitle}>Login</ThemedText>
+        <ThemedText style={styles.headerTitle}>{t("login_title")}</ThemedText>
         <View style={{ width: 40 }} />
       </View>
 
@@ -59,14 +59,14 @@ export default function Login() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.card}>
-            <ThemedText style={styles.cardTitle}>Welcome back</ThemedText>
+            <ThemedText style={styles.cardTitle}>{t("login_welcome_back")}</ThemedText>
             <ThemedText style={styles.cardSubtitle}>
-              Sign in with your email and password.
+              {t("login_subtitle")}
             </ThemedText>
 
             <View style={styles.form}>
               <TextInput
-                placeholder="Email"
+                placeholder={t("common_email")}
                 placeholderTextColor="rgba(255,255,255,0.55)"
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -76,7 +76,7 @@ export default function Login() {
               />
               <View style={styles.inputWithIcon}>
                 <TextInput
-                  placeholder="Password"
+                  placeholder={t("common_password")}
                   placeholderTextColor="rgba(255,255,255,0.55)"
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
@@ -107,7 +107,7 @@ export default function Login() {
               onPress={() => {
                 setLoading(true);
                 setErrorMessage("");
-                handleLoginEmail(email, password, setErrorMessage).then(
+                handleLoginEmail(email, password, setErrorMessage, t).then(
                   (success) => {
                     setLoading(false);
                     if (success) {
@@ -119,7 +119,7 @@ export default function Login() {
               disabled={loading}
             >
               <ThemedText style={styles.primaryButtonText}>
-                {loading ? "Signing in..." : "Sign in"}
+                {loading ? t("login_signing_in") : t("login_sign_in")}
               </ThemedText>
             </TouchableOpacity>
           </View>

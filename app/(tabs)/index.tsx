@@ -1,4 +1,5 @@
 import colors from "@/constants/Colors";
+import { useTheme } from "@/context/ThemeContext";
 import { googleAuth } from "@/utils/auth/google";
 import { router } from "expo-router";
 import {
@@ -14,6 +15,7 @@ const { width, height } = Dimensions.get("screen");
 
 export default function Welcome() {
   const c = colors.dark;
+  const { t } = useTheme();
   const styles = createStyles(c);
 
   return (
@@ -30,11 +32,9 @@ export default function Welcome() {
           style={styles.heroImage}
         />
         <View style={styles.heroBlock}>
-          <Text style={styles.heroIntro}>Welcome to</Text>
+          <Text style={styles.heroIntro}>{t("welcome_intro")}</Text>
           <Text style={styles.heroTitle}>SmartPantry</Text>
-          <Text style={styles.heroSubtitle}>
-            Your AI-powered{"\n"}kitchen & groceries companion.
-          </Text>
+          <Text style={styles.heroSubtitle}>{t("welcome_subtitle")}</Text>
         </View>
         <View style={styles.authCard}>
           <View style={[styles.section, { marginTop: 30 }]}>
@@ -42,9 +42,7 @@ export default function Welcome() {
               style={[styles.button, styles.primaryButton]}
               onPress={() => router.push("/login")}
             >
-              <Text style={styles.primaryButtonText}>
-                Continue with email
-              </Text>
+              <Text style={styles.primaryButtonText}>{t("welcome_continue_email")}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -52,7 +50,7 @@ export default function Welcome() {
               onPress={() => router.push("/register")}
             >
               <Text style={styles.secondaryButtonText}>
-                Create account with email
+                {t("welcome_create_account_email")}
               </Text>
             </TouchableOpacity>
           </View>
@@ -60,17 +58,15 @@ export default function Welcome() {
           <View style={styles.section}>
             <View style={styles.dividerRow}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
+              <Text style={styles.dividerText}>{t("common_or")}</Text>
               <View style={styles.dividerLine} />
             </View>
 
             <TouchableOpacity
               style={[styles.button, styles.googleButton]}
-              onPress={() => googleAuth()}
+              onPress={() => googleAuth(t)}
             >
-              <Text style={styles.googleButtonText}>
-                Continue with Google
-              </Text>
+              <Text style={styles.googleButtonText}>{t("welcome_continue_google")}</Text>
             </TouchableOpacity>
           </View>
         </View>
