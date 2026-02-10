@@ -188,9 +188,9 @@ const it: TranslationDictionary = {
   auth_no_account_email: "Nessun account trovato per questa email",
   auth_invalid_email_format: "Formato email non valido",
   auth_account_exists:
-    "Esiste gia un account associato a questa email. Fai il login.",
+    "Esiste già un account associato a questa email. Fai il login.",
   auth_email_already_registered:
-    "L'email e gia registrata. Torna indietro per accedere.",
+    "L'email è già registrata. Torna indietro per accedere.",
   auth_all_fields_required: "Tutti i campi sono obbligatori",
   auth_google_error_title: "Errore",
   auth_google_error_message:
@@ -203,10 +203,10 @@ const it: TranslationDictionary = {
   list_shared_default_name: "Lista condivisa",
   list_notice_unique_code:
     "Impossibile creare un codice invito univoco. Riprova.",
-  list_notice_already_shared: "Questa lista e gia condivisa.",
+  list_notice_already_shared: "Questa lista è già condivisa.",
   list_notice_enter_valid_invite: "Inserisci un codice invito valido.",
   list_notice_invite_not_found: "Codice invito non trovato.",
-  list_notice_item_already_exists: "\"{label}\" e gia nella tua lista",
+  list_notice_item_already_exists: "\"{label}\" è già nella tua lista",
   list_title_your_lists: "Le tue liste",
   list_accessibility_settings: "Impostazioni lista",
   list_header_shared_list: "Lista condivisa",
@@ -216,8 +216,8 @@ const it: TranslationDictionary = {
   list_empty_title: "Lista vuota",
   list_empty_subtitle: "Aggiungi il tuo primo elemento qui sotto.",
   list_scroll: "Scorri",
-  list_section_previous: "Elementi precedenti",
-  list_section_previous_meta: "Scorri a destra per riaggiungere",
+  list_section_previous: "Comprati di recente",
+  list_section_previous_meta: "Scorri a destra per aggiungere",
   list_previous_empty_title: "Nessun elemento precedente",
   list_previous_empty_subtitle:
     "Scorri a destra sugli elementi per inviarli qui.",
